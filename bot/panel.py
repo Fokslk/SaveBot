@@ -1,0 +1,574 @@
+from __future__ import annotations
+
+import os
+import sys
+import time
+import tkinter as tk
+from datetime import datetime
+from pathlib import Path
+from tkinter import messagebox, ttk
+
+from bot.config import BASE_DIR, load_config
+from bot.instance import InstanceLock, already_running_message, kill_foreign_bots
+from bot.runtime_stats import RecentEvent, RecentMessage, STATS
+from bot.runner import BotRunner, setup_logging
+
+BG = "#0f1419"
+BG2 = "#161d27"
+BG3 = "#1c2533"
+CARD = "#1a2330"
+LINE = "#2a3545"
+TEXT = "#e8eef7"
+MUTED = "#8b9bb0"
+ACCENT = "#3dbb9a"
+ACCENT2 = "#4da3ff"
+WARN = "#e6b84d"
+DANGER = "#ef6b6b"
+OK = "#4ad39a"
+
+
+KIND_RU = {
+    "save": "Сохранение:",
+    "media": "Медиа:",
+    "deleted": "Удаление:",
+    "edit": "Правка:",
+    "error": "Ошибка:",
+    "connection": "Связь:",
+    "update": "Апдейт:",
+}
+
+
+def _fmt_uptime(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+
+
+def _fmt_ago(ts: float) -> str:
+    if not ts:
+        return "—"
+    delta = max(0, int(time.time() - ts))
+    if delta < 60:
+        return f"{delta}с"
+    if delta < 3600:
+        return f"{delta // 60}м"
+    return f"{delta // 3600}ч"
+
+
+def _fmt_time(ts: float) -> str:
+    return datetime.fromtimestamp(ts).strftime("%H:%M:%S") if ts else "--:--:--"
+
+
+def _kind_label(kind: str) -> str:
+    primary = kind.split(",")[0].strip()
+    return KIND_RU.get(primary, primary)
+
+
+class MetricCard(tk.Frame):
+    def __init__(self, master, title: str, accent: str = ACCENT, **kw):
+        super().__init__(master, bg=CARD, highlightthickness=1, highlightbackground=LINE, **kw)
+        self.title_lbl = tk.Label(
+            self, text=title.upper(), bg=CARD, fg=MUTED,
+            font=("Segoe UI", 8, "bold"), anchor="w",
+        )
+        self.title_lbl.pack(fill="x", padx=14, pady=(12, 0))
+        self.value_lbl = tk.Label(
+            self, text="0", bg=CARD, fg=accent,
+            font=("Segoe UI", 22, "bold"), anchor="w",
+        )
+        self.value_lbl.pack(fill="x", padx=14, pady=(2, 12))
+
+    def set(self, value: str) -> None:
+        self.value_lbl.configure(text=value)
+
+
+class SaveModPanel(tk.Tk):
+    def __init__(self) -> None:
+        super().__init__()
+        self.title("Save Mod")
+        self.geometry("980x680")
+        self.minsize(860, 560)
+        self.configure(bg=BG)
+        self._runner = BotRunner()
+        self._lock: InstanceLock | None = None
+        self._auto_started = False
+        self._media_dir = BASE_DIR / "media"
+        self._visible_messages: list[RecentMessage] = []
+
+        try:
+            self.iconbitmap(default="")
+        except Exception:
+            pass
+
+        self._build_style()
+        self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.after(200, self._tick)
+        self.after(400, self._bootstrap)
+
+    def _build_style(self) -> None:
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure("TNotebook", background=BG, borderwidth=0)
+        style.configure(
+            "TNotebook.Tab",
+            background=BG3,
+            foreground=MUTED,
+            padding=(16, 8),
+            font=("Segoe UI", 10),
+        )
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", CARD)],
+            foreground=[("selected", TEXT)],
+        )
+        style.configure("Dark.Vertical.TScrollbar", background=BG3, troughcolor=BG)
+
+    def _build_ui(self) -> None:
+        header = tk.Frame(self, bg=BG2, height=72)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+
+        left = tk.Frame(header, bg=BG2)
+        left.pack(side="left", fill="y", padx=20)
+        tk.Label(
+            left, text="SAVE MOD", bg=BG2, fg=TEXT,
+            font=("Segoe UI", 18, "bold"),
+        ).pack(anchor="w", pady=(14, 0))
+        self.subtitle = tk.Label(
+            left, text="Панель управления",
+            bg=BG2, fg=MUTED, font=("Segoe UI", 9),
+        )
+        self.subtitle.pack(anchor="w")
+
+        right = tk.Frame(header, bg=BG2)
+        right.pack(side="right", padx=20)
+        self.status_dot = tk.Label(right, text="●", bg=BG2, fg=WARN, font=("Segoe UI", 14))
+        self.status_dot.pack(side="left", padx=(0, 6))
+        self.status_lbl = tk.Label(
+            right, text="ОСТАНОВЛЕН", bg=BG2, fg=WARN,
+            font=("Segoe UI", 11, "bold"),
+        )
+        self.status_lbl.pack(side="left", padx=(0, 18))
+        self.uptime_lbl = tk.Label(right, text="00:00", bg=BG2, fg=MUTED, font=("Consolas", 11))
+        self.uptime_lbl.pack(side="left")
+
+        bar = tk.Frame(self, bg=BG, pady=12)
+        bar.pack(fill="x", padx=20)
+
+        self.btn_start = tk.Button(
+            bar, text="▶  Запустить", command=self._start_bot,
+            bg=ACCENT, fg="#062218", activebackground="#34a888", activeforeground="#062218",
+            relief="flat", font=("Segoe UI", 10, "bold"), padx=16, pady=8, cursor="hand2",
+        )
+        self.btn_start.pack(side="left", padx=(0, 8))
+
+        self.btn_stop = tk.Button(
+            bar, text="■  Остановить", command=self._stop_bot,
+            bg=BG3, fg=TEXT, activebackground=LINE, activeforeground=TEXT,
+            relief="flat", font=("Segoe UI", 10, "bold"), padx=16, pady=8, cursor="hand2",
+            state="disabled",
+        )
+        self.btn_stop.pack(side="left", padx=(0, 8))
+
+        tk.Button(
+            bar, text="📁 Media", command=self._open_media,
+            bg=BG3, fg=TEXT, activebackground=LINE, relief="flat",
+            font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
+        ).pack(side="left", padx=(0, 8))
+
+        tk.Button(
+            bar, text="📄 Лог", command=self._open_log,
+            bg=BG3, fg=TEXT, activebackground=LINE, relief="flat",
+            font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
+        ).pack(side="left", padx=(0, 8))
+
+        tk.Button(
+            bar, text="🏠 База", command=self._open_data,
+            bg=BG3, fg=TEXT, activebackground=LINE, relief="flat",
+            font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
+        ).pack(side="left")
+
+        self.poll_lbl = tk.Label(bar, text="poll: —", bg=BG, fg=MUTED, font=("Segoe UI", 9))
+        self.poll_lbl.pack(side="right")
+
+        metrics = tk.Frame(self, bg=BG)
+        metrics.pack(fill="x", padx=20, pady=(4, 12))
+        for i in range(6):
+            metrics.columnconfigure(i, weight=1, uniform="m")
+
+        self.card_msg = MetricCard(metrics, "Сообщения", ACCENT2)
+        self.card_media = MetricCard(metrics, "Медиа", ACCENT)
+        self.card_del = MetricCard(metrics, "Удаления", WARN)
+        self.card_edit = MetricCard(metrics, "Правки", "#c084fc")
+        self.card_err = MetricCard(metrics, "Ошибки", DANGER)
+        self.card_db = MetricCard(metrics, "В базе", TEXT)
+
+        for i, card in enumerate(
+            (self.card_msg, self.card_media, self.card_del, self.card_edit, self.card_err, self.card_db)
+        ):
+            card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 6, 0))
+
+        body = tk.Frame(self, bg=BG)
+        body.pack(fill="both", expand=True, padx=20, pady=(0, 16))
+
+        self.nb = ttk.Notebook(body)
+        self.nb.pack(fill="both", expand=True)
+
+        self.events_list = self._make_list_tab("Действия")
+        self.messages_list = self._make_messages_tab("Сообщения")
+        self.errors_list = self._make_list_tab("Ошибки")
+        self.log_text = self._make_log_tab("Логи")
+
+        footer = tk.Frame(self, bg=BG2, height=28)
+        footer.pack(fill="x", side="bottom")
+        footer.pack_propagate(False)
+        self.footer_lbl = tk.Label(
+            footer,
+            text="Один экземпляр · Подробности в bot.log",
+            bg=BG2, fg=MUTED, font=("Segoe UI", 8), anchor="w",
+        )
+        self.footer_lbl.pack(fill="x", padx=16)
+
+    def _make_list_tab(self, title: str) -> tk.Listbox:
+        frame = tk.Frame(self.nb, bg=BG3)
+        self.nb.add(frame, text=f"  {title}  ")
+        lb = tk.Listbox(
+            frame,
+            bg=BG3,
+            fg=TEXT,
+            selectbackground=LINE,
+            selectforeground=TEXT,
+            activestyle="none",
+            borderwidth=0,
+            highlightthickness=0,
+            font=("Consolas", 10),
+        )
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=lb.yview)
+        lb.configure(yscrollcommand=scroll.set)
+        lb.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
+        scroll.pack(side="right", fill="y", pady=8, padx=(0, 8))
+        return lb
+
+    def _make_messages_tab(self, title: str) -> tk.Text:
+        frame = tk.Frame(self.nb, bg=BG3)
+        self.nb.add(frame, text=f"  {title}  ")
+        text = tk.Text(
+            frame,
+            bg=BG3,
+            fg=TEXT,
+            insertbackground=TEXT,
+            borderwidth=0,
+            highlightthickness=0,
+            font=("Consolas", 10),
+            wrap="none",
+            state="disabled",
+        )
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scroll.set)
+        text.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
+        scroll.pack(side="right", fill="y", pady=8, padx=(0, 8))
+        text.tag_configure("user_id", foreground=ACCENT2, underline=True)
+        text.tag_bind("user_id", "<Enter>", lambda event: event.widget.configure(cursor="hand2"))
+        text.tag_bind("user_id", "<Leave>", lambda event: event.widget.configure(cursor="xterm"))
+        text.tag_bind("user_id", "<Button-1>", self._open_message_folder_from_event)
+        return text
+
+    def _make_log_tab(self, title: str) -> tk.Text:
+        frame = tk.Frame(self.nb, bg=BG3)
+        self.nb.add(frame, text=f"  {title}  ")
+        txt = tk.Text(
+            frame,
+            bg=BG3,
+            fg=MUTED,
+            insertbackground=TEXT,
+            borderwidth=0,
+            highlightthickness=0,
+            font=("Consolas", 9),
+            wrap="none",
+            state="disabled",
+        )
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=txt.yview)
+        txt.configure(yscrollcommand=scroll.set)
+        txt.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
+        scroll.pack(side="right", fill="y", pady=8, padx=(0, 8))
+        txt.tag_configure("err", foreground=DANGER)
+        txt.tag_configure("warn", foreground=WARN)
+        txt.tag_configure("ok", foreground=OK)
+        return txt
+
+    def _bootstrap(self) -> None:
+        try:
+            killed = kill_foreign_bots(keep_pid=os.getpid(), include_panel=False)
+            if killed:
+                self.footer_lbl.configure(
+                    text=f"Остановлены чужие процессы: {', '.join(map(str, killed))}"
+                )
+            lock = InstanceLock()
+            if not lock.acquire():
+                messagebox.showerror("Save Mod", already_running_message())
+                self.footer_lbl.configure(text="Уже запущено в другом окне — закройте его и нажмите «Запустить»")
+                return
+            self._lock = lock
+
+            try:
+                config = load_config()
+                self._media_dir = config.media_dir
+            except Exception as exc:
+                messagebox.showerror("Конфигурация", str(exc))
+                self.footer_lbl.configure(text=f"Ошибка .env: {exc}")
+                return
+
+            self._start_bot()
+        except Exception as exc:
+            _write_crash(exc)
+            messagebox.showerror("Save Mod", f"Ошибка запуска:\n{exc}")
+            self.footer_lbl.configure(text=f"Ошибка: {exc}")
+
+    def _start_bot(self) -> None:
+        if self._runner.is_running:
+            return
+        if self._lock is None:
+            lock = InstanceLock()
+            if not lock.acquire():
+                messagebox.showerror("Save Mod", already_running_message())
+                return
+            self._lock = lock
+        kill_foreign_bots(keep_pid=os.getpid(), include_panel=False)
+        try:
+            self._runner.start()
+        except Exception as exc:
+            _write_crash(exc)
+            messagebox.showerror("Запуск", str(exc))
+            return
+        self.btn_start.configure(state="disabled")
+        self.btn_stop.configure(state="normal")
+
+    def _stop_bot(self) -> None:
+        self.btn_stop.configure(state="disabled")
+        self.update_idletasks()
+        self._runner.stop()
+        self.btn_start.configure(state="normal")
+        STATS.set_status("stopped")
+
+    def _on_close(self) -> None:
+        if self._runner.is_running:
+            if not messagebox.askokcancel("Выход", "Остановить бота и закрыть панель?"):
+                return
+            self._runner.stop()
+        if self._lock is not None:
+            self._lock.release()
+        self.destroy()
+
+    def _open_media(self) -> None:
+        path = BASE_DIR / "media"
+        path.mkdir(parents=True, exist_ok=True)
+        os.startfile(path)
+
+    def _open_data(self) -> None:
+        path = BASE_DIR / "data"
+        path.mkdir(parents=True, exist_ok=True)
+        os.startfile(path)
+
+    def _open_log(self) -> None:
+        path = BASE_DIR / "bot.log"
+        if not path.exists():
+            path.write_text("", encoding="utf-8")
+        os.startfile(path)
+
+    def _status_visual(self, status: str, last_poll_at: float) -> tuple[str, str, str]:
+        stale = bool(last_poll_at) and (time.time() - last_poll_at) > 45
+        if status == "starting":
+            return WARN, "ЗАПУСК", WARN
+        if status == "stopped":
+            return MUTED, "ОСТАНОВЛЕН", MUTED
+        if status == "conflict":
+            return DANGER, "КОНФЛИКТ", DANGER
+        if stale:
+            return WARN, "ЗАСТОЙ", WARN
+        return OK, "ОНЛАЙН", OK
+
+    def _fill_list(self, lb: tk.Listbox, events: list[RecentEvent]) -> None:
+        lines = []
+        for ev in events[:60]:
+            label = _kind_label(ev.kind)
+            lines.append(f"{_fmt_time(ev.at)}  {label:<11}  {ev.detail}")
+        self._set_list_lines(lb, lines)
+
+    def _fill_messages(self, text: tk.Text, items: list[RecentMessage]) -> None:
+        self._visible_messages = items[:80]
+        lines = []
+        for msg in self._visible_messages:
+            uid = str(msg.user_id) if msg.user_id is not None else "?"
+            nick = (msg.name or "без имени").replace("\n", " ").strip()
+            if msg.username:
+                nick = f"{nick} (@{msg.username})"
+            lines.append(f"{_fmt_time(msg.at)}  {uid}  {nick} — {msg.text}")
+        rendered = "\n".join(lines) if lines else "  пока пусто…"
+        if text.get("1.0", "end-1c") == rendered:
+            return
+
+        text.configure(state="normal")
+        text.delete("1.0", "end")
+        if self._visible_messages:
+            for index, msg in enumerate(self._visible_messages):
+                uid = str(msg.user_id) if msg.user_id is not None else "?"
+                nick = (msg.name or "без имени").replace("\n", " ").strip()
+                if msg.username:
+                    nick = f"{nick} (@{msg.username})"
+                text.insert("end", f"{_fmt_time(msg.at)}  ")
+                if msg.user_id is None:
+                    text.insert("end", uid)
+                else:
+                    text.insert("end", uid, ("user_id",))
+                line_end = "\n" if index < len(self._visible_messages) - 1 else ""
+                text.insert("end", f"  {nick} — {msg.text}{line_end}")
+        else:
+            text.insert("end", rendered)
+        text.configure(state="disabled")
+
+    def _open_message_folder_from_event(self, event):
+        line_number = int(event.widget.index(f"@{event.x},{event.y}").split(".", 1)[0])
+        message_index = line_number - 1
+        if not 0 <= message_index < len(self._visible_messages):
+            return "break"
+
+        folder = self._media_dir / str(self._visible_messages[message_index].chat_id)
+        if not folder.is_dir():
+            messagebox.showinfo(
+                "Папка не найдена",
+                "Для этой переписки пока нет папки с сохранёнными медиа.",
+                parent=self,
+            )
+            return "break"
+
+        try:
+            os.startfile(str(folder))
+        except OSError as exc:
+            messagebox.showerror("Не удалось открыть папку", str(exc), parent=self)
+        return "break"
+
+    def _set_list_lines(self, lb: tk.Listbox, lines: list[str]) -> None:
+        current = lb.get(0, "end")
+        if tuple(current) == tuple(lines):
+            return
+        lb.delete(0, "end")
+        for line in lines:
+            lb.insert("end", line)
+        if not lines:
+            lb.insert("end", "  пока пусто…")
+
+    def _refresh_log_view(self) -> None:
+        log_path = BASE_DIR / "bot.log"
+        if not log_path.exists():
+            return
+        try:
+            with open(log_path, "rb") as fh:
+                fh.seek(0, os.SEEK_END)
+                size = fh.tell()
+                fh.seek(max(0, size - 40000))
+                raw = fh.read().decode("utf-8", errors="replace")
+        except OSError:
+            return
+
+        interesting = []
+        for line in raw.splitlines()[-120:]:
+            low = line.lower()
+            if any(k in low for k in ("error", "critical", "warning", "saved", "delete", "connection", "online", "conflict", "stopped")):
+                if "api.telegram.org/bot" in line:
+                    parts = line.split("api.telegram.org/bot", 1)
+                    rest = parts[1]
+                    slash = rest.find("/")
+                    line = parts[0] + "api.telegram.org/bot***/" + (rest[slash + 1:] if slash >= 0 else "")
+                interesting.append(line)
+
+        rendered = "\n".join(interesting[-80:])
+        current = self.log_text.get("1.0", "end-1c")
+        if current == rendered:
+            return
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", "end")
+        for line in interesting[-80:]:
+            tag = ()
+            low = line.lower()
+            if "error" in low or "critical" in low or "conflict" in low:
+                tag = ("err",)
+            elif "warning" in low:
+                tag = ("warn",)
+            elif "saved" in low or "online" in low:
+                tag = ("ok",)
+            self.log_text.insert("end", line + "\n", tag)
+        self.log_text.see("end")
+        self.log_text.configure(state="disabled")
+
+    def _tick(self) -> None:
+        snap = STATS.snapshot()
+        running = self._runner.is_running
+        color, label, _ = self._status_visual(snap["status"], snap["last_poll_at"])
+        if not running and snap["status"] != "stopped":
+            label = "ОСТАНОВЛЕН"
+            color = MUTED
+
+        self.status_dot.configure(fg=color)
+        self.status_lbl.configure(text=label, fg=color)
+        uptime = _fmt_uptime(time.time() - snap["started_at"]) if running else "—"
+        self.uptime_lbl.configure(text=uptime)
+        self.poll_lbl.configure(text=f"poll: {_fmt_ago(snap['last_poll_at'])} · событие: {_fmt_ago(snap['last_event_at'])}")
+
+        self.card_msg.set(f"{snap['messages']:,}")
+        self.card_media.set(f"{snap['media']:,}")
+        self.card_del.set(f"{snap['deleted']:,}")
+        self.card_edit.set(f"{snap['edits']:,}")
+        self.card_err.set(f"{snap['errors']:,}")
+        self.card_db.set(f"{snap['db_messages']:,}")
+
+        self._fill_list(self.events_list, snap["recent"])
+        self._fill_messages(self.messages_list, snap["recent_messages"])
+        self._fill_list(self.errors_list, snap["recent_errors"])
+        self._refresh_log_view()
+
+        self.btn_start.configure(state="disabled" if running else "normal")
+        self.btn_stop.configure(state="normal" if running else "disabled")
+
+        self.after(800, self._tick)
+
+
+def _write_crash(exc: BaseException | None = None) -> None:
+    import traceback
+
+    path = BASE_DIR / "data" / "panel_crash.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write("\n" + "=" * 60 + "\n")
+        fh.write(datetime.now().isoformat(timespec="seconds") + "\n")
+        if exc is not None:
+            fh.write(f"{type(exc).__name__}: {exc}\n")
+        fh.write(traceback.format_exc())
+
+
+def main() -> None:
+    root = str(BASE_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    try:
+        setup_logging(console=False)
+        app = SaveModPanel()
+        app.mainloop()
+    except Exception as exc:
+        _write_crash(exc)
+        try:
+            root_tk = tk.Tk()
+            root_tk.withdraw()
+            messagebox.showerror("Save Mod — пиздец случился", f"{exc}\n\nПодробности: data\\panel_crash.log")
+            root_tk.destroy()
+        except Exception:
+            pass
+        raise
+
+
+if __name__ == "__main__":
+    main()

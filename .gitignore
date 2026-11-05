@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+*.lock
+data/
+media/
+*.db
+*.sqlite
+*.sqlite3
+*.rar
+*.pem
+*.key
+.DS_Store
+Thumbs.db
