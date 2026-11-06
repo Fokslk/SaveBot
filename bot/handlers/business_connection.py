@@ -5,7 +5,6 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.config import ADMIN_USER_ID
 from bot.handlers.notifications import mark_chat_unblocked, safe_send
 from bot.runtime_stats import STATS
 
@@ -28,20 +27,6 @@ async def handle_business_connection(update: Update, context: ContextTypes.DEFAU
     STATS.note_connection(conn.is_enabled)
 
     if conn.is_enabled:
-        credited = storage.credit_referral(conn.user.id)
-        if credited:
-            referrer_id, referral_count = credited
-            if ADMIN_USER_ID is not None and referral_count % 5 == 0:
-                await safe_send(
-                    context,
-                    ADMIN_USER_ID,
-                    kind="message",
-                    text=(
-                        f'Пользователь <a href="tg://user?id={referrer_id}">{referrer_id}</a> '
-                        "набрал 5 подключённых приглашений."
-                    ),
-                    parse_mode="HTML",
-                )
         mark_chat_unblocked(context, conn.user_chat_id)
         text = (
             "✅ <b>Подключение активировано</b>\n\n"

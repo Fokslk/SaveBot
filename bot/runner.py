@@ -12,7 +12,6 @@ from telegram.ext import (
     Application,
     BusinessConnectionHandler,
     BusinessMessagesDeletedHandler,
-    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -22,12 +21,7 @@ from telegram.ext import (
 
 from bot.config import load_config
 from bot.handlers.business_connection import handle_business_connection
-from bot.handlers.commands import (
-    referral_callback,
-    referral_command,
-    start_command,
-    status_command,
-)
+from bot.handlers.commands import start_command, status_command
 from bot.handlers.deleted import handle_deleted_business_messages
 from bot.handlers.messages import handle_business_message, handle_edited_business_message
 from bot.runtime_stats import STATS
@@ -220,10 +214,6 @@ class BotRunner:
         application.add_handler(TypeHandler(Update, _log_update), group=-1)
         application.add_handler(CommandHandler("start", start_command))
         application.add_handler(CommandHandler("status", status_command))
-        application.add_handler(CommandHandler("referal", referral_command))
-        application.add_handler(
-            CallbackQueryHandler(referral_callback, pattern=r"^referral:(create|claim)$")
-        )
         application.add_handler(BusinessConnectionHandler(handle_business_connection))
         application.add_handler(
             MessageHandler(
