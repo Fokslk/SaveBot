@@ -96,6 +96,18 @@ class MessageStorage:
                     business_connection_id TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS referrals (
+                    referred_user_id INTEGER PRIMARY KEY,
+                    referrer_user_id INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    credited INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS referral_progress (
+                    user_id INTEGER PRIMARY KEY,
+                    count INTEGER NOT NULL DEFAULT 0
+                );
                 """
             )
 
@@ -161,6 +173,85 @@ class MessageStorage:
                 (chat_id,),
             ).fetchone()
         return row["business_connection_id"] if row else None
+
+    def register_referral(self, referred_user_id: int, referrer_user_id: int) -> bool:
+        if referred_user_id == referrer_user_id:
+            return False
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO referrals (referred_user_id, referrer_user_id, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(referred_user_id) DO NOTHING
+                """,
+                (referred_user_id, referrer_user_id, now),
+            )
+        return cursor.rowcount == 1
+
+    def credit_referral(self, referred_user_id: int) -> tuple[int, int] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT referrer_user_id FROM referrals WHERE referred_user_id = ? AND credited = 0",
+                (referred_user_id,),
+            ).fetchone()
+            if not row:
+                return None
+
+            referrer_user_id = int(row["referrer_user_id"])
+            cursor = conn.execute(
+                "UPDATE referrals SET credited = 1 WHERE referred_user_id = ? AND credited = 0",
+                (referred_user_id,),
+            )
+            if cursor.rowcount != 1:
+                return None
+
+            conn.execute(
+                """
+                INSERT INTO referral_progress (user_id, count) VALUES (?, 1)
+                ON CONFLICT(user_id) DO UPDATE SET count = count + 1
+                """,
+                (referrer_user_id,),
+            )
+            count = conn.execute(
+                "SELECT count FROM referral_progress WHERE user_id = ?",
+                (referrer_user_id,),
+            ).fetchone()["count"]
+        return referrer_user_id, int(count)
+
+    def get_referral_count(self, user_id: int) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT count FROM referral_progress WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        return int(row["count"]) if row else 0
+
+    def claim_referral_reward(self, user_id: int) -> tuple[bool, int]:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE referral_progress SET count = count - 5 WHERE user_id = ? AND count >= 5",
+                (user_id,),
+            )
+            if cursor.rowcount != 1:
+                return False, self.get_referral_count(user_id)
+            row = conn.execute(
+                "SELECT count FROM referral_progress WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        return True, int(row["count"])
+
+    def get_active_connections(self) -> list[sqlite3.Row]:
+        with self._connect() as conn:
+            return conn.execute(
+                """
+                SELECT bc.user_id, bc.updated_at, r.referrer_user_id
+                FROM business_connections AS bc
+                LEFT JOIN referrals AS r ON r.referred_user_id = bc.user_id
+                WHERE bc.is_enabled = 1
+                ORDER BY bc.updated_at DESC
+                """
+            ).fetchall()
 
     def save_message(self, data: dict[str, Any]) -> None:
         with self._connect() as conn:

@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+ADMIN_USER_ID: int | None = None  # Заполните своим Telegram ID для доступа к /status.
 
 
 @dataclass(frozen=True)
