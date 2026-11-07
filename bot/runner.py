@@ -150,7 +150,7 @@ class BotRunner:
             self._thread = threading.Thread(target=self._thread_main, name="save-mod-bot", daemon=True)
             self._thread.start()
 
-    def stop(self, timeout: float = 12.0) -> None:
+    def stop(self, timeout: float = 12.0) -> bool:
         with self._lock:
             loop = self._loop
             stop_event = self._stop_event
@@ -161,6 +161,9 @@ class BotRunner:
 
         if thread is not None:
             thread.join(timeout=timeout)
+            if thread.is_alive():
+                logger.error("Bot thread did not stop within %.1f seconds", timeout)
+                return False
 
         STATS.set_status("stopped")
         with self._lock:
@@ -168,6 +171,7 @@ class BotRunner:
             self._loop = None
             self._stop_event = None
             self._app = None
+        return True
 
     def _thread_main(self) -> None:
         setup_logging(console=False)

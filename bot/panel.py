@@ -93,6 +93,10 @@ class SaveModPanel(tk.Tk):
         self._runner = BotRunner()
         self._lock: InstanceLock | None = None
         self._auto_started = False
+        self._auto_restart_enabled = False
+        self._auto_restart_pending = False
+        self._auto_restart_attempted = False
+        self._auto_restart_result: str | None = None
         self._media_dir = BASE_DIR / "media"
         self._visible_messages: list[RecentMessage] = []
 
@@ -174,6 +178,13 @@ class SaveModPanel(tk.Tk):
             state="disabled",
         )
         self.btn_stop.pack(side="left", padx=(0, 8))
+
+        self.btn_auto_restart = tk.Button(
+            bar, text="Автоперезапуск: выкл", command=self._toggle_auto_restart,
+            bg=BG3, fg=TEXT, activebackground=LINE, activeforeground=TEXT,
+            relief="flat", font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
+        )
+        self.btn_auto_restart.pack(side="left", padx=(0, 8))
 
         tk.Button(
             bar, text="📁 Media", command=self._open_media,
@@ -340,6 +351,7 @@ class SaveModPanel(tk.Tk):
             self._lock = lock
         kill_foreign_bots(keep_pid=os.getpid(), include_panel=False)
         try:
+            self._auto_restart_attempted = False
             self._runner.start()
         except Exception as exc:
             _write_crash(exc)
@@ -347,6 +359,50 @@ class SaveModPanel(tk.Tk):
             return
         self.btn_start.configure(state="disabled")
         self.btn_stop.configure(state="normal")
+
+    def _toggle_auto_restart(self) -> None:
+        if self._auto_restart_pending:
+            return
+        self._auto_restart_enabled = not self._auto_restart_enabled
+        self._auto_restart_attempted = False
+        enabled = self._auto_restart_enabled
+        self.btn_auto_restart.configure(
+            text=f"Автоперезапуск: {'вкл' if enabled else 'выкл'}",
+            bg=OK if enabled else BG3,
+            fg="#062218" if enabled else TEXT,
+            activebackground=ACCENT if enabled else LINE,
+            activeforeground="#062218" if enabled else TEXT,
+        )
+        self.footer_lbl.configure(
+            text=(
+                "Автоперезапуск включён: перезапуск после 45 секунд без polling."
+                if enabled
+                else "Автоперезапуск выключен."
+            )
+        )
+
+    def _begin_auto_restart(self) -> None:
+        if self._auto_restart_pending:
+            return
+        self._auto_restart_pending = True
+        self._auto_restart_result = None
+        self.btn_auto_restart.configure(state="disabled")
+        self.footer_lbl.configure(text="Застой polling: выполняется перезапуск бота…")
+        threading.Thread(
+            target=self._auto_restart_worker,
+            name="save-mod-auto-restart",
+            daemon=True,
+        ).start()
+
+    def _auto_restart_worker(self) -> None:
+        try:
+            if not self._runner.stop(timeout=12.0) or self._runner.is_running:
+                self._auto_restart_result = "timeout"
+                return
+            self._runner.start()
+            self._auto_restart_result = "started"
+        except Exception as exc:
+            self._auto_restart_result = f"error:{type(exc).__name__}"
 
     def _stop_bot(self) -> None:
         self.btn_stop.configure(state="disabled")
@@ -508,10 +564,42 @@ class SaveModPanel(tk.Tk):
     def _tick(self) -> None:
         snap = STATS.snapshot()
         running = self._runner.is_running
-        color, label, _ = self._status_visual(snap["status"], snap["last_poll_at"])
+        poll_reference = snap["last_poll_at"] or (snap["started_at"] if running else 0.0)
+        stale = (
+            running
+            and snap["status"] == "online"
+            and bool(poll_reference)
+            and (time.time() - poll_reference) > 45
+        )
+        color, label, _ = self._status_visual(snap["status"], poll_reference)
         if not running and snap["status"] != "stopped":
             label = "ОСТАНОВЛЕН"
             color = MUTED
+
+        if self._auto_restart_result is not None:
+            result = self._auto_restart_result
+            self._auto_restart_result = None
+            self._auto_restart_pending = False
+            self.btn_auto_restart.configure(state="normal")
+            if result == "started":
+                self.footer_lbl.configure(text="Бот автоматически перезапущен после застоя polling.")
+            elif result == "timeout":
+                self.footer_lbl.configure(
+                    text="Автоперезапуск отменён: поток бота не остановился за 12 секунд."
+                )
+            else:
+                self.footer_lbl.configure(text=f"Ошибка автоперезапуска: {result.removeprefix('error:')}")
+
+        if running and not stale:
+            self._auto_restart_attempted = False
+        elif (
+            self._auto_restart_enabled
+            and stale
+            and not self._auto_restart_attempted
+            and not self._auto_restart_pending
+        ):
+            self._auto_restart_attempted = True
+            self._begin_auto_restart()
 
         self.status_dot.configure(fg=color)
         self.status_lbl.configure(text=label, fg=color)
@@ -531,8 +619,8 @@ class SaveModPanel(tk.Tk):
         self._fill_list(self.errors_list, snap["recent_errors"])
         self._refresh_log_view()
 
-        self.btn_start.configure(state="disabled" if running else "normal")
-        self.btn_stop.configure(state="normal" if running else "disabled")
+        self.btn_start.configure(state="disabled" if running or self._auto_restart_pending else "normal")
+        self.btn_stop.configure(state="normal" if running and not self._auto_restart_pending else "disabled")
 
         self.after(800, self._tick)
 
