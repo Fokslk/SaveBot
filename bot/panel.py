@@ -142,7 +142,7 @@ class SaveModPanel(tk.Tk):
         self._runner = BotRunner()
         self._lock: InstanceLock | None = None
         self._auto_started = False
-        self._auto_restart_enabled = False
+        self._auto_restart_enabled = True
         self._auto_restart_pending = False
         self._auto_restart_attempted = False
         self._auto_restart_result: str | None = None
@@ -229,8 +229,8 @@ class SaveModPanel(tk.Tk):
         self.btn_stop.pack(side="left", padx=(0, 8))
 
         self.btn_auto_restart = tk.Button(
-            bar, text=self._tr("auto_off"), command=self._toggle_auto_restart,
-            bg=BG3, fg=TEXT, activebackground=LINE, activeforeground=TEXT,
+            bar, text=self._tr("auto_on"), command=self._toggle_auto_restart,
+            bg=OK, fg="#062218", activebackground=ACCENT, activeforeground="#062218",
             relief="flat", font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
         )
         self.btn_auto_restart.pack(side="left", padx=(0, 8))
@@ -680,7 +680,7 @@ class SaveModPanel(tk.Tk):
         poll_reference = snap["last_poll_at"] or (snap["started_at"] if running else 0.0)
         stale = (
             running
-            and snap["status"] == "online"
+            and snap["status"] in {"starting", "online"}
             and bool(poll_reference)
             and (time.time() - poll_reference) > 45
         )
