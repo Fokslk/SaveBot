@@ -27,14 +27,62 @@ DANGER = "#ef6b6b"
 OK = "#4ad39a"
 
 
-KIND_RU = {
-    "save": "Сохранение:",
-    "media": "Медиа:",
-    "deleted": "Удаление:",
-    "edit": "Правка:",
-    "error": "Ошибка:",
-    "connection": "Связь:",
-    "update": "Апдейт:",
+KIND_LABELS = {
+    "ru": {
+        "save": "Сохранение:", "media": "Медиа:", "deleted": "Удаление:",
+        "edit": "Правка:", "error": "Ошибка:", "connection": "Связь:", "update": "Апдейт:",
+    },
+    "en": {
+        "save": "Saved:", "media": "Media:", "deleted": "Deleted:",
+        "edit": "Edit:", "error": "Error:", "connection": "Connection:", "update": "Update:",
+    },
+}
+
+UI_TEXT = {
+    "ru": {
+        "subtitle": "Панель управления", "language_button": "EN", "start": "▶  Запустить",
+        "stop": "■  Остановить", "auto_off": "Автоперезапуск: выкл", "auto_on": "Автоперезапуск: вкл",
+        "media_button": "📁 Медиа", "log_button": "📄 Лог", "data_button": "🏠 База",
+        "poll": "poll", "event": "событие", "messages": "Сообщения", "media": "Медиа",
+        "deleted": "Удаления", "edits": "Правки", "errors": "Ошибки", "database": "В базе",
+        "tab_events": "Действия", "tab_messages": "Сообщения", "tab_errors": "Ошибки", "tab_logs": "Логи",
+        "footer_default": "Один экземпляр · Подробности в bot.log", "status_starting": "ЗАПУСК",
+        "status_stopped": "ОСТАНОВЛЕН", "status_conflict": "КОНФЛИКТ", "status_stale": "ЗАСТОЙ",
+        "status_online": "ОНЛАЙН", "list_empty": "  пока пусто…", "messages_empty": "  пока пусто…",
+        "no_name": "без имени", "auto_enabled": "Автоперезапуск включён: перезапуск после 45 секунд без polling.",
+        "auto_disabled": "Автоперезапуск выключен.", "auto_restarting": "Застой polling: выполняется перезапуск бота…",
+        "auto_restarted": "Бот автоматически перезапущен после застоя polling.",
+        "auto_timeout": "Автоперезапуск отменён: поток бота не остановился за 12 секунд.",
+        "auto_error": "Ошибка автоперезапуска: {error}", "foreign_processes": "Остановлены другие процессы: {pids}",
+        "already_running_title": "Save Mod", "already_running_footer": "Уже запущено в другом окне — закройте его и нажмите «Запустить»",
+        "config_error_title": "Конфигурация", "start_error_title": "Запуск", "startup_error_title": "Save Mod",
+        "config_error_footer": "Ошибка .env: {error}", "close_title": "Выход",
+        "close_question": "Остановить бота и закрыть панель?", "startup_error": "Ошибка запуска:\n{error}",
+        "folder_missing_title": "Папка не найдена", "folder_missing": "Для этой переписки пока нет папки с сохранёнными медиа.",
+        "folder_open_error": "Не удалось открыть папку",
+    },
+    "en": {
+        "subtitle": "Control panel", "language_button": "RU", "start": "▶  Start",
+        "stop": "■  Stop", "auto_off": "Auto-restart: off", "auto_on": "Auto-restart: on",
+        "media_button": "📁 Media", "log_button": "📄 Log", "data_button": "🏠 Database",
+        "poll": "poll", "event": "event", "messages": "Messages", "media": "Media",
+        "deleted": "Deleted", "edits": "Edits", "errors": "Errors", "database": "In database",
+        "tab_events": "Activity", "tab_messages": "Messages", "tab_errors": "Errors", "tab_logs": "Logs",
+        "footer_default": "Single instance · Details in bot.log", "status_starting": "STARTING",
+        "status_stopped": "STOPPED", "status_conflict": "CONFLICT", "status_stale": "STALE",
+        "status_online": "ONLINE", "list_empty": "  nothing yet…", "messages_empty": "  no messages yet…",
+        "no_name": "unknown", "auto_enabled": "Auto-restart enabled: restarts after 45 seconds without polling.",
+        "auto_disabled": "Auto-restart disabled.", "auto_restarting": "Polling stalled: restarting the bot…",
+        "auto_restarted": "Bot automatically restarted after polling stalled.",
+        "auto_timeout": "Auto-restart cancelled: bot thread did not stop within 12 seconds.",
+        "auto_error": "Auto-restart error: {error}", "foreign_processes": "Stopped other processes: {pids}",
+        "already_running_title": "Save Mod", "already_running_footer": "Already running in another window. Close it before starting again.",
+        "config_error_title": "Configuration", "start_error_title": "Start", "startup_error_title": "Save Mod",
+        "config_error_footer": "Configuration error: {error}", "close_title": "Exit",
+        "close_question": "Stop the bot and close the panel?", "startup_error": "Startup error:\n{error}",
+        "folder_missing_title": "Folder not found", "folder_missing": "No saved media folder exists for this conversation yet.",
+        "folder_open_error": "Could not open folder",
+    },
 }
 
 
@@ -45,24 +93,24 @@ def _fmt_uptime(seconds: float) -> str:
     return f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
 
-def _fmt_ago(ts: float) -> str:
+def _fmt_ago(ts: float, language: str = "ru") -> str:
     if not ts:
         return "—"
     delta = max(0, int(time.time() - ts))
     if delta < 60:
-        return f"{delta}с"
+        return f"{delta}s" if language == "en" else f"{delta}с"
     if delta < 3600:
-        return f"{delta // 60}м"
-    return f"{delta // 3600}ч"
+        return f"{delta // 60}m" if language == "en" else f"{delta // 60}м"
+    return f"{delta // 3600}h" if language == "en" else f"{delta // 3600}ч"
 
 
 def _fmt_time(ts: float) -> str:
     return datetime.fromtimestamp(ts).strftime("%H:%M:%S") if ts else "--:--:--"
 
 
-def _kind_label(kind: str) -> str:
+def _kind_label(kind: str, language: str = "ru") -> str:
     primary = kind.split(",")[0].strip()
-    return KIND_RU.get(primary, primary)
+    return KIND_LABELS[language].get(primary, primary)
 
 
 class MetricCard(tk.Frame):
@@ -90,6 +138,7 @@ class SaveModPanel(tk.Tk):
         self.geometry("980x680")
         self.minsize(860, 560)
         self.configure(bg=BG)
+        self._language = "ru"
         self._runner = BotRunner()
         self._lock: InstanceLock | None = None
         self._auto_started = False
@@ -144,7 +193,7 @@ class SaveModPanel(tk.Tk):
             font=("Segoe UI", 18, "bold"),
         ).pack(anchor="w", pady=(14, 0))
         self.subtitle = tk.Label(
-            left, text="Панель управления",
+            left, text=self._tr("subtitle"),
             bg=BG2, fg=MUTED, font=("Segoe UI", 9),
         )
         self.subtitle.pack(anchor="w")
@@ -154,7 +203,7 @@ class SaveModPanel(tk.Tk):
         self.status_dot = tk.Label(right, text="●", bg=BG2, fg=WARN, font=("Segoe UI", 14))
         self.status_dot.pack(side="left", padx=(0, 6))
         self.status_lbl = tk.Label(
-            right, text="ОСТАНОВЛЕН", bg=BG2, fg=WARN,
+            right, text=self._tr("status_stopped"), bg=BG2, fg=WARN,
             font=("Segoe UI", 11, "bold"),
         )
         self.status_lbl.pack(side="left", padx=(0, 18))
@@ -165,14 +214,14 @@ class SaveModPanel(tk.Tk):
         bar.pack(fill="x", padx=20)
 
         self.btn_start = tk.Button(
-            bar, text="▶  Запустить", command=self._start_bot,
+            bar, text=self._tr("start"), command=self._start_bot,
             bg=ACCENT, fg="#062218", activebackground="#34a888", activeforeground="#062218",
             relief="flat", font=("Segoe UI", 10, "bold"), padx=16, pady=8, cursor="hand2",
         )
         self.btn_start.pack(side="left", padx=(0, 8))
 
         self.btn_stop = tk.Button(
-            bar, text="■  Остановить", command=self._stop_bot,
+            bar, text=self._tr("stop"), command=self._stop_bot,
             bg=BG3, fg=TEXT, activebackground=LINE, activeforeground=TEXT,
             relief="flat", font=("Segoe UI", 10, "bold"), padx=16, pady=8, cursor="hand2",
             state="disabled",
@@ -180,44 +229,53 @@ class SaveModPanel(tk.Tk):
         self.btn_stop.pack(side="left", padx=(0, 8))
 
         self.btn_auto_restart = tk.Button(
-            bar, text="Автоперезапуск: выкл", command=self._toggle_auto_restart,
+            bar, text=self._tr("auto_off"), command=self._toggle_auto_restart,
             bg=BG3, fg=TEXT, activebackground=LINE, activeforeground=TEXT,
             relief="flat", font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
         )
         self.btn_auto_restart.pack(side="left", padx=(0, 8))
 
-        tk.Button(
-            bar, text="📁 Media", command=self._open_media,
+        self.btn_media = tk.Button(
+            bar, text=self._tr("media_button"), command=self._open_media,
             bg=BG3, fg=TEXT, activebackground=LINE, relief="flat",
             font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
-        ).pack(side="left", padx=(0, 8))
+        )
+        self.btn_media.pack(side="left", padx=(0, 8))
 
-        tk.Button(
-            bar, text="📄 Лог", command=self._open_log,
+        self.btn_log = tk.Button(
+            bar, text=self._tr("log_button"), command=self._open_log,
             bg=BG3, fg=TEXT, activebackground=LINE, relief="flat",
             font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
-        ).pack(side="left", padx=(0, 8))
+        )
+        self.btn_log.pack(side="left", padx=(0, 8))
 
-        tk.Button(
-            bar, text="🏠 База", command=self._open_data,
+        self.btn_data = tk.Button(
+            bar, text=self._tr("data_button"), command=self._open_data,
             bg=BG3, fg=TEXT, activebackground=LINE, relief="flat",
             font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
-        ).pack(side="left")
+        )
+        self.btn_data.pack(side="left")
 
-        self.poll_lbl = tk.Label(bar, text="poll: —", bg=BG, fg=MUTED, font=("Segoe UI", 9))
+        self.poll_lbl = tk.Label(bar, text="", bg=BG, fg=MUTED, font=("Segoe UI", 9))
         self.poll_lbl.pack(side="right")
+        self.btn_language = tk.Button(
+            bar, text=self._tr("language_button"), command=self._toggle_language,
+            bg=BG3, fg=TEXT, activebackground=LINE, activeforeground=TEXT,
+            relief="flat", font=("Segoe UI", 9, "bold"), padx=10, pady=8, cursor="hand2",
+        )
+        self.btn_language.pack(side="right", padx=(0, 8))
 
         metrics = tk.Frame(self, bg=BG)
         metrics.pack(fill="x", padx=20, pady=(4, 12))
         for i in range(6):
             metrics.columnconfigure(i, weight=1, uniform="m")
 
-        self.card_msg = MetricCard(metrics, "Сообщения", ACCENT2)
-        self.card_media = MetricCard(metrics, "Медиа", ACCENT)
-        self.card_del = MetricCard(metrics, "Удаления", WARN)
-        self.card_edit = MetricCard(metrics, "Правки", "#c084fc")
-        self.card_err = MetricCard(metrics, "Ошибки", DANGER)
-        self.card_db = MetricCard(metrics, "В базе", TEXT)
+        self.card_msg = MetricCard(metrics, self._tr("messages"), ACCENT2)
+        self.card_media = MetricCard(metrics, self._tr("media"), ACCENT)
+        self.card_del = MetricCard(metrics, self._tr("deleted"), WARN)
+        self.card_edit = MetricCard(metrics, self._tr("edits"), "#c084fc")
+        self.card_err = MetricCard(metrics, self._tr("errors"), DANGER)
+        self.card_db = MetricCard(metrics, self._tr("database"), TEXT)
 
         for i, card in enumerate(
             (self.card_msg, self.card_media, self.card_del, self.card_edit, self.card_err, self.card_db)
@@ -230,20 +288,63 @@ class SaveModPanel(tk.Tk):
         self.nb = ttk.Notebook(body)
         self.nb.pack(fill="both", expand=True)
 
-        self.events_list = self._make_list_tab("Действия")
-        self.messages_list = self._make_messages_tab("Сообщения")
-        self.errors_list = self._make_list_tab("Ошибки")
-        self.log_text = self._make_log_tab("Логи")
+        self.events_list = self._make_list_tab(self._tr("tab_events"))
+        self.messages_list = self._make_messages_tab(self._tr("tab_messages"))
+        self.errors_list = self._make_list_tab(self._tr("tab_errors"))
+        self.log_text = self._make_log_tab(self._tr("tab_logs"))
 
         footer = tk.Frame(self, bg=BG2, height=28)
         footer.pack(fill="x", side="bottom")
         footer.pack_propagate(False)
         self.footer_lbl = tk.Label(
             footer,
-            text="Один экземпляр · Подробности в bot.log",
+            text=self._tr("footer_default"),
             bg=BG2, fg=MUTED, font=("Segoe UI", 8), anchor="w",
         )
         self.footer_lbl.pack(fill="x", padx=16)
+        self._update_poll_label(STATS.snapshot())
+
+    def _tr(self, key: str, **values: str) -> str:
+        return UI_TEXT[self._language][key].format(**values)
+
+    def _update_poll_label(self, snap: dict) -> None:
+        poll = _fmt_ago(snap["last_poll_at"], self._language)
+        event = _fmt_ago(snap["last_event_at"], self._language)
+        self.poll_lbl.configure(text=f"{self._tr('poll')}: {poll} · {self._tr('event')}: {event}")
+
+    def _toggle_language(self) -> None:
+        self._language = "en" if self._language == "ru" else "ru"
+        self._refresh_language()
+
+    def _refresh_language(self) -> None:
+        self.subtitle.configure(text=self._tr("subtitle"))
+        self.btn_language.configure(text=self._tr("language_button"))
+        self.btn_start.configure(text=self._tr("start"))
+        self.btn_stop.configure(text=self._tr("stop"))
+        self.btn_media.configure(text=self._tr("media_button"))
+        self.btn_auto_restart.configure(
+            text=self._tr("auto_on" if self._auto_restart_enabled else "auto_off")
+        )
+        self.btn_log.configure(text=self._tr("log_button"))
+        self.btn_data.configure(text=self._tr("data_button"))
+        for card, key in (
+            (self.card_msg, "messages"),
+            (self.card_media, "media"),
+            (self.card_del, "deleted"),
+            (self.card_edit, "edits"),
+            (self.card_err, "errors"),
+            (self.card_db, "database"),
+        ):
+            card.title_lbl.configure(text=self._tr(key).upper())
+        for widget, key in (
+            (self.events_list, "tab_events"),
+            (self.messages_list, "tab_messages"),
+            (self.errors_list, "tab_errors"),
+            (self.log_text, "tab_logs"),
+        ):
+            self.nb.tab(widget.master, text=f"  {self._tr(key)}  ")
+        self.footer_lbl.configure(text=self._tr("footer_default"))
+        self._update_poll_label(STATS.snapshot())
 
     def _make_list_tab(self, title: str) -> tk.Listbox:
         frame = tk.Frame(self.nb, bg=BG3)
@@ -317,12 +418,12 @@ class SaveModPanel(tk.Tk):
             killed = kill_foreign_bots(keep_pid=os.getpid(), include_panel=False)
             if killed:
                 self.footer_lbl.configure(
-                    text=f"Остановлены чужие процессы: {', '.join(map(str, killed))}"
+                    text=self._tr("foreign_processes", pids=", ".join(map(str, killed)))
                 )
             lock = InstanceLock()
             if not lock.acquire():
-                messagebox.showerror("Save Mod", already_running_message())
-                self.footer_lbl.configure(text="Уже запущено в другом окне — закройте его и нажмите «Запустить»")
+                messagebox.showerror(self._tr("already_running_title"), already_running_message())
+                self.footer_lbl.configure(text=self._tr("already_running_footer"))
                 return
             self._lock = lock
 
@@ -330,15 +431,15 @@ class SaveModPanel(tk.Tk):
                 config = load_config()
                 self._media_dir = config.media_dir
             except Exception as exc:
-                messagebox.showerror("Конфигурация", str(exc))
-                self.footer_lbl.configure(text=f"Ошибка .env: {exc}")
+                messagebox.showerror(self._tr("config_error_title"), str(exc))
+                self.footer_lbl.configure(text=self._tr("config_error_footer", error=exc))
                 return
 
             self._start_bot()
         except Exception as exc:
             _write_crash(exc)
-            messagebox.showerror("Save Mod", f"Ошибка запуска:\n{exc}")
-            self.footer_lbl.configure(text=f"Ошибка: {exc}")
+            messagebox.showerror(self._tr("startup_error_title"), self._tr("startup_error", error=exc))
+            self.footer_lbl.configure(text=self._tr("auto_error", error=exc))
 
     def _start_bot(self) -> None:
         if self._runner.is_running:
@@ -346,7 +447,7 @@ class SaveModPanel(tk.Tk):
         if self._lock is None:
             lock = InstanceLock()
             if not lock.acquire():
-                messagebox.showerror("Save Mod", already_running_message())
+                messagebox.showerror(self._tr("already_running_title"), already_running_message())
                 return
             self._lock = lock
         kill_foreign_bots(keep_pid=os.getpid(), include_panel=False)
@@ -355,7 +456,7 @@ class SaveModPanel(tk.Tk):
             self._runner.start()
         except Exception as exc:
             _write_crash(exc)
-            messagebox.showerror("Запуск", str(exc))
+            messagebox.showerror(self._tr("start_error_title"), str(exc))
             return
         self.btn_start.configure(state="disabled")
         self.btn_stop.configure(state="normal")
@@ -367,19 +468,13 @@ class SaveModPanel(tk.Tk):
         self._auto_restart_attempted = False
         enabled = self._auto_restart_enabled
         self.btn_auto_restart.configure(
-            text=f"Автоперезапуск: {'вкл' if enabled else 'выкл'}",
+            text=self._tr("auto_on" if enabled else "auto_off"),
             bg=OK if enabled else BG3,
             fg="#062218" if enabled else TEXT,
             activebackground=ACCENT if enabled else LINE,
             activeforeground="#062218" if enabled else TEXT,
         )
-        self.footer_lbl.configure(
-            text=(
-                "Автоперезапуск включён: перезапуск после 45 секунд без polling."
-                if enabled
-                else "Автоперезапуск выключен."
-            )
-        )
+        self.footer_lbl.configure(text=self._tr("auto_enabled" if enabled else "auto_disabled"))
 
     def _begin_auto_restart(self) -> None:
         if self._auto_restart_pending:
@@ -387,7 +482,7 @@ class SaveModPanel(tk.Tk):
         self._auto_restart_pending = True
         self._auto_restart_result = None
         self.btn_auto_restart.configure(state="disabled")
-        self.footer_lbl.configure(text="Застой polling: выполняется перезапуск бота…")
+        self.footer_lbl.configure(text=self._tr("auto_restarting"))
         threading.Thread(
             target=self._auto_restart_worker,
             name="save-mod-auto-restart",
@@ -413,7 +508,7 @@ class SaveModPanel(tk.Tk):
 
     def _on_close(self) -> None:
         if self._runner.is_running:
-            if not messagebox.askokcancel("Выход", "Остановить бота и закрыть панель?"):
+            if not messagebox.askokcancel(self._tr("close_title"), self._tr("close_question")):
                 return
             self._runner.stop()
         if self._lock is not None:
@@ -439,32 +534,50 @@ class SaveModPanel(tk.Tk):
     def _status_visual(self, status: str, last_poll_at: float) -> tuple[str, str, str]:
         stale = bool(last_poll_at) and (time.time() - last_poll_at) > 45
         if status == "starting":
-            return WARN, "ЗАПУСК", WARN
+            return WARN, self._tr("status_starting"), WARN
         if status == "stopped":
-            return MUTED, "ОСТАНОВЛЕН", MUTED
+            return MUTED, self._tr("status_stopped"), MUTED
         if status == "conflict":
-            return DANGER, "КОНФЛИКТ", DANGER
+            return DANGER, self._tr("status_conflict"), DANGER
         if stale:
-            return WARN, "ЗАСТОЙ", WARN
-        return OK, "ОНЛАЙН", OK
+            return WARN, self._tr("status_stale"), WARN
+        return OK, self._tr("status_online"), OK
 
     def _fill_list(self, lb: tk.Listbox, events: list[RecentEvent]) -> None:
         lines = []
         for ev in events[:60]:
-            label = _kind_label(ev.kind)
-            lines.append(f"{_fmt_time(ev.at)}  {label:<11}  {ev.detail}")
+            label = _kind_label(ev.kind, self._language)
+            lines.append(f"{_fmt_time(ev.at)}  {label:<11}  {self._translate_event_detail(ev.detail)}")
         self._set_list_lines(lb, lines)
+
+    def _translate_event_detail(self, detail: str) -> str:
+        if self._language == "ru":
+            return detail
+        replacements = (
+            ("подключение отключено", "connection disabled"),
+            ("подключение включено", "connection enabled"),
+            ("одноразовое медиа", "one-time media"),
+            ("правка текста", "message edited"),
+            ("сообщ.", "messages"),
+            ("удалено", "deleted"),
+            ("сообщение", "message"),
+            ("медиа", "media"),
+            (" от ", " by "),
+        )
+        for source, target in replacements:
+            detail = detail.replace(source, target)
+        return detail
 
     def _fill_messages(self, text: tk.Text, items: list[RecentMessage]) -> None:
         self._visible_messages = items[:80]
         lines = []
         for msg in self._visible_messages:
             uid = str(msg.user_id) if msg.user_id is not None else "?"
-            nick = (msg.name or "без имени").replace("\n", " ").strip()
+            nick = (msg.name or self._tr("no_name")).replace("\n", " ").strip()
             if msg.username:
                 nick = f"{nick} (@{msg.username})"
             lines.append(f"{_fmt_time(msg.at)}  {uid}  {nick} — {msg.text}")
-        rendered = "\n".join(lines) if lines else "  пока пусто…"
+        rendered = "\n".join(lines) if lines else self._tr("messages_empty")
         if text.get("1.0", "end-1c") == rendered:
             return
 
@@ -473,7 +586,7 @@ class SaveModPanel(tk.Tk):
         if self._visible_messages:
             for index, msg in enumerate(self._visible_messages):
                 uid = str(msg.user_id) if msg.user_id is not None else "?"
-                nick = (msg.name or "без имени").replace("\n", " ").strip()
+                nick = (msg.name or self._tr("no_name")).replace("\n", " ").strip()
                 if msg.username:
                     nick = f"{nick} (@{msg.username})"
                 text.insert("end", f"{_fmt_time(msg.at)}  ")
@@ -496,8 +609,8 @@ class SaveModPanel(tk.Tk):
         folder = self._media_dir / str(self._visible_messages[message_index].chat_id)
         if not folder.is_dir():
             messagebox.showinfo(
-                "Папка не найдена",
-                "Для этой переписки пока нет папки с сохранёнными медиа.",
+                self._tr("folder_missing_title"),
+                self._tr("folder_missing"),
                 parent=self,
             )
             return "break"
@@ -505,7 +618,7 @@ class SaveModPanel(tk.Tk):
         try:
             os.startfile(str(folder))
         except OSError as exc:
-            messagebox.showerror("Не удалось открыть папку", str(exc), parent=self)
+            messagebox.showerror(self._tr("folder_open_error"), str(exc), parent=self)
         return "break"
 
     def _set_list_lines(self, lb: tk.Listbox, lines: list[str]) -> None:
@@ -516,7 +629,7 @@ class SaveModPanel(tk.Tk):
         for line in lines:
             lb.insert("end", line)
         if not lines:
-            lb.insert("end", "  пока пусто…")
+            lb.insert("end", self._tr("list_empty"))
 
     def _refresh_log_view(self) -> None:
         log_path = BASE_DIR / "bot.log"
@@ -573,7 +686,7 @@ class SaveModPanel(tk.Tk):
         )
         color, label, _ = self._status_visual(snap["status"], poll_reference)
         if not running and snap["status"] != "stopped":
-            label = "ОСТАНОВЛЕН"
+            label = self._tr("status_stopped")
             color = MUTED
 
         if self._auto_restart_result is not None:
@@ -582,13 +695,11 @@ class SaveModPanel(tk.Tk):
             self._auto_restart_pending = False
             self.btn_auto_restart.configure(state="normal")
             if result == "started":
-                self.footer_lbl.configure(text="Бот автоматически перезапущен после застоя polling.")
+                self.footer_lbl.configure(text=self._tr("auto_restarted"))
             elif result == "timeout":
-                self.footer_lbl.configure(
-                    text="Автоперезапуск отменён: поток бота не остановился за 12 секунд."
-                )
+                self.footer_lbl.configure(text=self._tr("auto_timeout"))
             else:
-                self.footer_lbl.configure(text=f"Ошибка автоперезапуска: {result.removeprefix('error:')}")
+                self.footer_lbl.configure(text=self._tr("auto_error", error=result.removeprefix("error:")))
 
         if running and not stale:
             self._auto_restart_attempted = False
@@ -605,7 +716,7 @@ class SaveModPanel(tk.Tk):
         self.status_lbl.configure(text=label, fg=color)
         uptime = _fmt_uptime(time.time() - snap["started_at"]) if running else "—"
         self.uptime_lbl.configure(text=uptime)
-        self.poll_lbl.configure(text=f"poll: {_fmt_ago(snap['last_poll_at'])} · событие: {_fmt_ago(snap['last_event_at'])}")
+        self._update_poll_label(snap)
 
         self.card_msg.set(f"{snap['messages']:,}")
         self.card_media.set(f"{snap['media']:,}")

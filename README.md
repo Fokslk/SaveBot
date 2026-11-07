@@ -1,6 +1,6 @@
 # Save Mod — Telegram Bot
 
-Бизнес-бот для Telegram, предназначенный для **логирования личных переписок** и **сохранения медиафайлов**. Бот интегрируется в профиль через раздел **«Автоматизация действий» / «Чат-боты»** в настройках Telegram и перехватывает события в личных диалогах.
+Save Mod is a Telegram Business bot that archives personal conversations and media locally, and sends notifications about edited or deleted messages. It includes a desktop control panel with Russian and English UI.
 
 ## Назначение и принцип работы
 
