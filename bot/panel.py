@@ -146,6 +146,7 @@ class SaveModPanel(tk.Tk):
         self._auto_restart_pending = False
         self._auto_restart_attempted = False
         self._auto_restart_result: str | None = None
+        self._last_log_refresh_at = 0.0
         self._media_dir = BASE_DIR / "media"
         self._visible_messages: list[RecentMessage] = []
 
@@ -632,6 +633,13 @@ class SaveModPanel(tk.Tk):
             lb.insert("end", self._tr("list_empty"))
 
     def _refresh_log_view(self) -> None:
+        if self.nb.select() != str(self.log_text.master):
+            return
+        now = time.monotonic()
+        if now - self._last_log_refresh_at < 3.0:
+            return
+        self._last_log_refresh_at = now
+
         log_path = BASE_DIR / "bot.log"
         if not log_path.exists():
             return
