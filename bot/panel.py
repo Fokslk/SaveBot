@@ -55,6 +55,7 @@ UI_TEXT = {
         "status_online": "ОНЛАЙН", "list_empty": "  пока пусто…", "messages_empty": "  пока пусто…",
         "no_name": "без имени", "auto_enabled": "Автоперезапуск включён: перезапуск после 45 секунд без polling.",
         "auto_disabled": "Автоперезапуск выключен.", "auto_restarting": "Застой polling: выполняется перезапуск бота…",
+        "auto_waiting": "Поток запущен, ожидается восстановление polling.",
         "auto_restarted": "Бот автоматически перезапущен после застоя polling.",
         "auto_timeout": "Автоперезапуск отменён: поток бота не остановился за 30 секунд.",
         "auto_retry": "Автоперезапуск не удался. Повторная попытка через 60 секунд.",
@@ -78,6 +79,7 @@ UI_TEXT = {
         "status_online": "ONLINE", "list_empty": "  nothing yet…", "messages_empty": "  no messages yet…",
         "no_name": "unknown", "auto_enabled": "Auto-restart enabled: restarts after 45 seconds without polling.",
         "auto_disabled": "Auto-restart disabled.", "auto_restarting": "Polling stalled: restarting the bot…",
+        "auto_waiting": "Bot thread started; waiting for polling to recover.",
         "auto_restarted": "Bot automatically restarted after polling stalled.",
         "auto_timeout": "Auto-restart cancelled: bot thread did not stop within 30 seconds.",
         "auto_retry": "Auto-restart failed. Retrying in 60 seconds.",
@@ -699,6 +701,11 @@ class SaveModPanel(tk.Tk):
         snap = STATS.snapshot()
         running = self._runner.is_running
         poll_reference = snap["last_poll_at"] or (snap["started_at"] if running else 0.0)
+        polling_healthy = (
+            running
+            and snap["status"] == "online"
+            and snap["last_poll_at"] >= snap["started_at"]
+        )
         stale = (
             running
             and snap["status"] in {"starting", "online"}
@@ -716,15 +723,18 @@ class SaveModPanel(tk.Tk):
             self._auto_restart_pending = False
             self.btn_auto_restart.configure(state="normal")
             if result == "started":
-                self._auto_restart_retry_at = None
-                self.footer_lbl.configure(text=self._tr("auto_restarted"))
+                self._auto_restart_retry_at = time.monotonic() + 60.0
+                self.footer_lbl.configure(text=self._tr("auto_waiting"))
             else:
                 self._auto_restart_retry_at = time.monotonic() + 60.0
                 self.footer_lbl.configure(text=self._tr("auto_retry"))
 
-        if running and not stale:
+        if polling_healthy:
+            recovered = self._auto_restart_retry_at is not None
             self._auto_restart_attempted = False
             self._auto_restart_retry_at = None
+            if recovered:
+                self.footer_lbl.configure(text=self._tr("auto_restarted"))
         elif self._auto_restart_enabled and not self._auto_restart_pending:
             retry_due = (
                 self._auto_restart_retry_at is not None
