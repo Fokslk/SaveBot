@@ -56,7 +56,8 @@ UI_TEXT = {
         "no_name": "без имени", "auto_enabled": "Автоперезапуск включён: перезапуск после 45 секунд без polling.",
         "auto_disabled": "Автоперезапуск выключен.", "auto_restarting": "Застой polling: выполняется перезапуск бота…",
         "auto_restarted": "Бот автоматически перезапущен после застоя polling.",
-        "auto_timeout": "Автоперезапуск отменён: поток бота не остановился за 12 секунд.",
+        "auto_timeout": "Автоперезапуск отменён: поток бота не остановился за 30 секунд.",
+        "auto_retry": "Автоперезапуск не удался. Повторная попытка через 60 секунд.",
         "auto_error": "Ошибка автоперезапуска: {error}", "foreign_processes": "Остановлены другие процессы: {pids}",
         "already_running_title": "Save Mod", "already_running_footer": "Уже запущено в другом окне — закройте его и нажмите «Запустить»",
         "config_error_title": "Конфигурация", "start_error_title": "Запуск", "startup_error_title": "Save Mod",
@@ -78,7 +79,8 @@ UI_TEXT = {
         "no_name": "unknown", "auto_enabled": "Auto-restart enabled: restarts after 45 seconds without polling.",
         "auto_disabled": "Auto-restart disabled.", "auto_restarting": "Polling stalled: restarting the bot…",
         "auto_restarted": "Bot automatically restarted after polling stalled.",
-        "auto_timeout": "Auto-restart cancelled: bot thread did not stop within 12 seconds.",
+        "auto_timeout": "Auto-restart cancelled: bot thread did not stop within 30 seconds.",
+        "auto_retry": "Auto-restart failed. Retrying in 60 seconds.",
         "auto_error": "Auto-restart error: {error}", "foreign_processes": "Stopped other processes: {pids}",
         "already_running_title": "Save Mod", "already_running_footer": "Already running in another window. Close it before starting again.",
         "config_error_title": "Configuration", "start_error_title": "Start", "startup_error_title": "Save Mod",
@@ -150,6 +152,7 @@ class SaveModPanel(tk.Tk):
         self._auto_restart_pending = False
         self._auto_restart_attempted = False
         self._auto_restart_result: str | None = None
+        self._auto_restart_retry_at: float | None = None
         self._last_log_refresh_at = 0.0
         self._media_dir = BASE_DIR / "media"
         self._visible_messages: list[RecentMessage] = []
@@ -713,22 +716,25 @@ class SaveModPanel(tk.Tk):
             self._auto_restart_pending = False
             self.btn_auto_restart.configure(state="normal")
             if result == "started":
+                self._auto_restart_retry_at = None
                 self.footer_lbl.configure(text=self._tr("auto_restarted"))
-            elif result == "timeout":
-                self.footer_lbl.configure(text=self._tr("auto_timeout"))
             else:
-                self.footer_lbl.configure(text=self._tr("auto_error", error=result.removeprefix("error:")))
+                self._auto_restart_retry_at = time.monotonic() + 60.0
+                self.footer_lbl.configure(text=self._tr("auto_retry"))
 
         if running and not stale:
             self._auto_restart_attempted = False
-        elif (
-            self._auto_restart_enabled
-            and stale
-            and not self._auto_restart_attempted
-            and not self._auto_restart_pending
-        ):
-            self._auto_restart_attempted = True
-            self._begin_auto_restart()
+            self._auto_restart_retry_at = None
+        elif self._auto_restart_enabled and not self._auto_restart_pending:
+            retry_due = (
+                self._auto_restart_retry_at is not None
+                and time.monotonic() >= self._auto_restart_retry_at
+            )
+            first_attempt = stale and not self._auto_restart_attempted and self._auto_restart_retry_at is None
+            if retry_due or first_attempt:
+                self._auto_restart_retry_at = None
+                self._auto_restart_attempted = True
+                self._begin_auto_restart()
 
         self.status_dot.configure(fg=color)
         self.status_lbl.configure(text=label, fg=color)
