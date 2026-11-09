@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
@@ -12,6 +13,8 @@ from bot.config import BASE_DIR, load_config
 from bot.instance import InstanceLock, already_running_message, kill_foreign_bots
 from bot.runtime_stats import RecentEvent, RecentMessage, STATS
 from bot.runner import BotRunner, setup_logging
+
+logger = logging.getLogger(__name__)
 
 BG = "#0f1419"
 BG2 = "#161d27"
@@ -482,6 +485,7 @@ class SaveModPanel(tk.Tk):
             return
         self._auto_restart_pending = True
         self._auto_restart_result = None
+        logger.warning("Auto-restart triggered after polling stalled")
         self.btn_auto_restart.configure(state="disabled")
         self.footer_lbl.configure(text=self._tr("auto_restarting"))
         threading.Thread(
@@ -492,13 +496,18 @@ class SaveModPanel(tk.Tk):
 
     def _auto_restart_worker(self) -> None:
         try:
-            if not self._runner.stop(timeout=12.0) or self._runner.is_running:
+            logger.info("Auto-restart worker: requesting bot shutdown")
+            if not self._runner.stop(timeout=30.0) or self._runner.is_running:
                 self._auto_restart_result = "timeout"
+                logger.error("Auto-restart aborted because the bot thread did not stop")
                 return
+            logger.info("Auto-restart worker: bot stopped; starting it again")
             self._runner.start()
             self._auto_restart_result = "started"
+            logger.info("Auto-restart worker: new bot thread started")
         except Exception as exc:
             self._auto_restart_result = f"error:{type(exc).__name__}"
+            logger.exception("Auto-restart worker failed")
 
     def _stop_bot(self) -> None:
         self.btn_stop.configure(state="disabled")
