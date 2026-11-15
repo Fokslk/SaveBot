@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import math
+from collections import deque
 import os
 import sys
 import threading
@@ -55,14 +57,14 @@ KIND_LABELS = {
 
 UI_TEXT = {
     "ru": {
-        "subtitle": "Панель управления", "overview": "ОБЗОР", "activity": "АКТИВНОСТЬ", "quick_access": "БЫСТРЫЙ ДОСТУП", "uptime": "Время работы", "language_button": "EN", "start": "▶  Запустить",
+        "subtitle": "Панель управления", "overview": "ОБЗОР", "activity": "АКТИВНОСТЬ", "quick_access": "БЫСТРЫЙ ДОСТУП", "uptime": "Время работы", "chart_title": "Динамика активности", "chart_focus": "Подробно: {name}", "chart_all": "Все показатели", "card_graph": "График ↗", "card_selected": "На графике ✓", "chart_window": "Скорость в минуту · замер ≈ 10 сек · история до 4 минут", "chart_empty": "График появится после первого замера", "chart_messages": "Сообщения", "chart_media": "Медиа", "chart_errors": "Ошибки", "motion_on": "Анимация: вкл", "motion_off": "Анимация: выкл", "language_button": "EN", "start": "▶  Запустить",
         "stop": "■  Остановить", "auto_off": "Автоперезапуск: выкл", "auto_on": "Автоперезапуск: вкл",
         "media_button": "📁 Медиа", "log_button": "📄 Лог", "data_button": "🏠 База",
         "poll": "poll", "event": "событие", "messages": "Сообщения", "media": "Медиа",
         "deleted": "Удаления", "edits": "Правки", "errors": "Ошибки", "database": "В базе",
         "tab_events": "Действия", "tab_messages": "Сообщения", "tab_errors": "Ошибки", "tab_logs": "Логи",
         "footer_default": "Один экземпляр · Подробности в bot.log", "status_starting": "ЗАПУСК",
-        "status_stopped": "ОСТАНОВЛЕН", "status_conflict": "КОНФЛИКТ", "status_stale": "ЗАСТОЙ",
+        "status_stopped": "ОСТАНОВЛЕН", "status_stopping": "ОСТАНОВКА", "stopped_notice": "Бот остановлен.", "stopping_notice": "Останавливаем бота…", "stop_failed": "Бот не остановился. Проверьте лог и попробуйте ещё раз.", "stop_wait": "Дождитесь завершения остановки бота.", "new_error": "Новая ошибка — подробности во вкладке «Ошибки».", "status_conflict": "КОНФЛИКТ", "status_stale": "ЗАСТОЙ",
         "status_online": "ОНЛАЙН", "list_empty": "  пока пусто…", "messages_empty": "  пока пусто…",
         "no_name": "без имени", "auto_enabled": "Автоперезапуск включён: перезапуск после 45 секунд без polling.",
         "auto_disabled": "Автоперезапуск выключен.", "auto_restarting": "Застой polling: выполняется перезапуск бота…",
@@ -80,14 +82,14 @@ UI_TEXT = {
         "folder_open_error": "Не удалось открыть папку",
     },
     "en": {
-        "subtitle": "Control panel", "overview": "OVERVIEW", "activity": "ACTIVITY", "quick_access": "QUICK ACCESS", "uptime": "Uptime", "language_button": "RU", "start": "▶  Start",
+        "subtitle": "Control panel", "overview": "OVERVIEW", "activity": "ACTIVITY", "quick_access": "QUICK ACCESS", "uptime": "Uptime", "chart_title": "Activity trends", "chart_focus": "Detail: {name}", "chart_all": "All metrics", "card_graph": "View graph ↗", "card_selected": "On graph ✓", "chart_window": "Per minute · sampled ~10 sec · up to 4 minutes", "chart_empty": "The graph will appear after the first sample", "chart_messages": "Messages", "chart_media": "Media", "chart_errors": "Errors", "motion_on": "Motion: on", "motion_off": "Motion: off", "language_button": "RU", "start": "▶  Start",
         "stop": "■  Stop", "auto_off": "Auto-restart: off", "auto_on": "Auto-restart: on",
         "media_button": "📁 Media", "log_button": "📄 Log", "data_button": "🏠 Database",
         "poll": "poll", "event": "event", "messages": "Messages", "media": "Media",
         "deleted": "Deleted", "edits": "Edits", "errors": "Errors", "database": "In database",
         "tab_events": "Activity", "tab_messages": "Messages", "tab_errors": "Errors", "tab_logs": "Logs",
         "footer_default": "Single instance · Details in bot.log", "status_starting": "STARTING",
-        "status_stopped": "STOPPED", "status_conflict": "CONFLICT", "status_stale": "STALE",
+        "status_stopped": "STOPPED", "status_stopping": "STOPPING", "stopped_notice": "Bot stopped.", "stopping_notice": "Stopping the bot…", "stop_failed": "The bot did not stop. Check the log and try again.", "stop_wait": "Please wait until the bot has stopped.", "new_error": "New error — see the Errors tab for details.", "status_conflict": "CONFLICT", "status_stale": "STALE",
         "status_online": "ONLINE", "list_empty": "  nothing yet…", "messages_empty": "  no messages yet…",
         "no_name": "unknown", "auto_enabled": "Auto-restart enabled: restarts after 45 seconds without polling.",
         "auto_disabled": "Auto-restart disabled.", "auto_restarting": "Polling stalled: restarting the bot…",
@@ -134,37 +136,492 @@ def _kind_label(kind: str, language: str = "ru") -> str:
     return KIND_LABELS[language].get(primary, primary)
 
 
-class MetricCard(tk.Frame):
-    """A compact metric with a consistent accent and readable hierarchy."""
+def _mix_color(start: str, end: str, progress: float) -> str:
+    """Interpolate two #rrggbb colors without relying on additional packages."""
+    values = [round(int(start[i:i + 2], 16) * (1 - progress)
+                    + int(end[i:i + 2], 16) * progress) for i in (1, 3, 5)]
+    return "#%02x%02x%02x" % tuple(values)
 
-    def __init__(self, master, title: str, accent: str = ACCENT, **kw):
+
+class MotionNotebook(tk.Frame):
+    """A compact notebook with interruptible, optional directional transitions."""
+
+    def __init__(self, master, motion):
+        super().__init__(master, bg=BG, highlightthickness=0)
+        self._motion = motion
+        self._pages = []
+        self._buttons = {}
+        self._selected = None
+        self._animation_id = None
+        self._generation = 0
+        self.header = tk.Frame(self, bg=BG)
+        self.header.pack(side="top", fill="x")
+        self.bind("<Configure>", self._resize)
+
+    def add(self, page, text):
+        holder = tk.Frame(self.header, bg=BG)
+        holder.pack(side="left", padx=(0, 4))
+        button = tk.Button(holder, text=text, command=lambda: self._select(page),
+                           bg=BG2, fg=MUTED, activebackground=BG3, activeforeground=TEXT,
+                           relief="flat", bd=0, padx=16, pady=8, cursor="hand2",
+                           highlightthickness=1, highlightbackground=BG2,
+                           highlightcolor=ACCENT2, font=("Segoe UI", 10, "bold"), takefocus=True)
+        button.pack(fill="x")
+        underline = tk.Frame(holder, bg=BG2, height=3)
+        underline.pack(fill="x")
+        self._pages.append(page)
+        self._buttons[page] = (button, underline)
+        if self._selected is None:
+            self._selected = page
+        self._show_selected()
+
+    def tab(self, page, **options):
+        if "text" in options:
+            self._buttons[page][0].configure(text=options["text"])
+
+    def select(self):
+        return str(self._selected) if self._selected else ""
+
+    def _geometry(self):
+        return max(1, self.winfo_width()), max(1, self.winfo_height() - 44)
+
+    def _show_selected(self):
+        w, h = self._geometry()
+        for page in self._pages:
+            if page is self._selected:
+                page.place(x=0, y=44, width=w, height=h)
+            else:
+                page.place_forget()
+            button, line = self._buttons[page]
+            chosen = page is self._selected
+            button.configure(bg=CARD if chosen else BG2, fg=TEXT if chosen else MUTED,
+                             highlightbackground=CARD if chosen else BG2)
+            line.configure(bg=ACCENT if chosen else BG2)
+        self.header.lift()
+
+    def finish(self):
+        self._generation += 1
+        if self._animation_id is not None:
+            self.after_cancel(self._animation_id)
+            self._animation_id = None
+        self._show_selected()
+
+    def _resize(self, event):
+        if event.widget is self:
+            self.finish()
+
+    def _select(self, page):
+        if page is self._selected:
+            return
+        self.finish()
+        previous = self._selected
+        direction = 1 if self._pages.index(page) > self._pages.index(previous) else -1
+        self._selected = page
+        if not self._motion():
+            self._show_selected()
+            return
+        width, height = self._geometry()
+        if width <= 1 or height <= 1:
+            self._show_selected()
+            return
+        for candidate in self._pages:
+            button, line = self._buttons[candidate]
+            chosen = candidate is page
+            button.configure(bg=CARD if chosen else BG2, fg=TEXT if chosen else MUTED,
+                             highlightbackground=CARD if chosen else BG2)
+            line.configure(bg=ACCENT if chosen else BG2)
+        page.place(x=direction * width, y=44, width=width, height=height)
+        page.lift()
+        self.header.lift()
+        started, generation = time.monotonic(), self._generation
+        def frame():
+            if generation != self._generation:
+                return
+            progress = min(1.0, (time.monotonic() - started) / 0.22)
+            eased = 1 - (1 - progress) ** 3
+            page.place_configure(x=round(direction * width * (1 - eased)))
+            previous.place_configure(x=round(-direction * width * eased))
+            if progress < 1.0 and self._motion():
+                self._animation_id = self.after(16, frame)
+            else:
+                self._animation_id = None
+                self._show_selected()
+        frame()
+
+
+class NoticeLabel(tk.Label):
+    """Highlight a changed message briefly; the message remains readable afterwards."""
+    def __init__(self, master, motion, **kw):
+        self._motion = motion
+        self._notice_id = None
+        self._notice_text = kw.get("text", "")
+        super().__init__(master, **kw)
+
+    def configure(self, *args, **kw):
+        text = kw.get("text")
+        changed = text is not None and text != self._notice_text
+        if text is not None:
+            self._notice_text = text
+        result = super().configure(*args, **kw)
+        if changed:
+            if self._notice_id is not None:
+                self.after_cancel(self._notice_id)
+                self._notice_id = None
+            if not self._motion():
+                super().configure(fg=MUTED)
+            else:
+                started = time.monotonic()
+                def frame():
+                    progress = min(1.0, (time.monotonic() - started) / 0.55)
+                    super(NoticeLabel, self).configure(fg=_mix_color(TEXT, MUTED, progress))
+                    if progress < 1 and self._motion():
+                        self._notice_id = self.after(30, frame)
+                    else:
+                        self._notice_id = None
+                        super(NoticeLabel, self).configure(fg=MUTED)
+                frame()
+        return result
+
+    config = configure
+
+    def finish(self):
+        if self._notice_id is not None:
+            self.after_cancel(self._notice_id)
+            self._notice_id = None
+        super().configure(fg=MUTED)
+
+
+class MetricCard(tk.Frame):
+    """Metric values ease to their latest actual count; motion is optional."""
+
+    def __init__(self, master, title: str, accent: str = ACCENT, motion=lambda: True, **kw):
         super().__init__(master, bg=CARD, highlightthickness=1, highlightbackground=LINE, **kw)
-        tk.Frame(self, bg=accent, height=3).pack(fill="x")
+        self._motion = motion
+        self._current = 0
+        self._target = 0
+        self._animation_id = None
+        self._selection_id = None
+        self._accent = accent
+        self._selected = False
+        self._selection_color = LINE
+        self._click_callback = None
+        self._stripe = tk.Frame(self, bg=accent, height=3)
+        self._stripe.pack(fill="x")
         inner = tk.Frame(self, bg=CARD)
+        self._inner = inner
         inner.pack(fill="both", expand=True, padx=14, pady=(10, 12))
-        self.title_lbl = tk.Label(
-            inner, text=title.upper(), bg=CARD, fg=MUTED,
-            font=("Segoe UI", 9, "bold"), anchor="w",
-        )
+        self.title_lbl = tk.Label(inner, text=title.upper(), bg=CARD, fg=MUTED,
+                                  font=("Segoe UI", 9, "bold"), anchor="w")
         self.title_lbl.pack(fill="x")
-        self.value_lbl = tk.Label(
-            inner, text="0", bg=CARD, fg=TEXT,
-            font=("Segoe UI", 23, "bold"), anchor="w",
-        )
+        self.value_lbl = tk.Label(inner, text="0", bg=CARD, fg=TEXT,
+                                  font=("Segoe UI", 23, "bold"), anchor="w")
         self.value_lbl.pack(fill="x", pady=(3, 0))
 
+    def enable_detail(self, callback, label):
+        self._click_callback = callback
+        self.configure(cursor="hand2", takefocus=True, highlightcolor=self._accent)
+        self.hint = tk.Label(self._inner, text=label, bg=CARD, fg=self._accent,
+                             font=("Segoe UI", 8, "bold"), anchor="w", cursor="hand2")
+        self.hint.pack(fill="x", pady=(3, 0))
+        for widget in (self, self._stripe, self._inner, self.title_lbl, self.value_lbl, self.hint):
+            widget.configure(cursor="hand2")
+            widget.bind("<Button-1>", lambda event: self._click_callback())
+        self.bind("<Return>", lambda event: self._click_callback())
+        self.bind("<space>", lambda event: self._click_callback())
+
+    def set_selection(self, selected, label):
+        self._selected = selected
+        self.hint.configure(text=label)
+        if self._selection_id is not None:
+            self.after_cancel(self._selection_id)
+            self._selection_id = None
+        start = self._selection_color
+        end = self._accent if selected else LINE
+        if not self._motion():
+            self._selection_color = end
+            self.configure(highlightbackground=end)
+            return
+        started = time.monotonic()
+        def frame():
+            progress = min(1.0, (time.monotonic() - started) / 0.22)
+            eased = 1 - (1 - progress) ** 3
+            self._selection_color = _mix_color(start, end, eased)
+            self.configure(highlightbackground=self._selection_color)
+            if progress < 1 and self._motion():
+                self._selection_id = self.after(16, frame)
+            else:
+                self._selection_id = None
+                self._selection_color = end
+                self.configure(highlightbackground=end)
+        frame()
+
     def set(self, value: str) -> None:
-        self.value_lbl.configure(text=value)
+        target = int(value.replace(",", ""))
+        if target == self._target and (self._motion() or self._current == target):
+            return
+        self._target = target
+        if self._animation_id is not None:
+            self.after_cancel(self._animation_id)
+            self._animation_id = None
+        if not self._motion():
+            self._current = target
+            self.value_lbl.configure(text=f"{target:,}")
+            return
+        start, started = self._current, time.monotonic()
+        def frame():
+            progress = min(1.0, (time.monotonic() - started) / 0.35)
+            eased = 1 - (1 - progress) ** 3
+            self._current = round(start + (target - start) * eased)
+            self.value_lbl.configure(text=f"{self._current:,}")
+            if progress < 1.0 and self._motion():
+                self._animation_id = self.after(25, frame)
+            else:
+                self._current = target
+                self.value_lbl.configure(text=f"{target:,}")
+                self._animation_id = None
+        frame()
+
+
+class ActivityChart(tk.Frame):
+    """Live rates derived only from observed counters; no invented history."""
+
+    COLORS = (ACCENT2, ACCENT, DANGER)
+    KEYS = ("messages", "media", "errors")
+
+    def __init__(self, master, tr, motion):
+        super().__init__(master, bg=CARD, highlightthickness=1, highlightbackground=LINE)
+        self._tr = tr
+        self._motion = motion
+        self._reveal = 1.0
+        self._reveal_id = None
+        self.samples = deque(maxlen=24)
+        self._baseline = None
+        self._session = None
+        self._hover_index = None
+        self._filter = None
+        self.on_filter_change = None
+        top = tk.Frame(self, bg=CARD)
+        top.pack(fill="x", padx=16, pady=(12, 0))
+        self.title_label = tk.Label(top, bg=CARD, fg=TEXT, font=("Segoe UI", 12, "bold"), anchor="w")
+        self.title_label.pack(side="left")
+        self.reset_button = tk.Button(top, command=lambda: self.set_filter(None),
+                                      bg=BG3, fg=TEXT, activebackground=LINE,
+                                      activeforeground=TEXT, relief="flat", bd=0,
+                                      padx=10, pady=4, font=("Segoe UI", 9, "bold"),
+                                      cursor="hand2", takefocus=True,
+                                      highlightthickness=1, highlightbackground=LINE,
+                                      highlightcolor=ACCENT2)
+        self.reset_button.pack(side="right")
+        self.window_label = tk.Label(top, bg=CARD, fg=MUTED, font=("Segoe UI", 9), anchor="e")
+        self.window_label.pack(side="right", padx=(0, 16))
+        legend = tk.Frame(self, bg=CARD)
+        legend.pack(fill="x", padx=16, pady=(5, 0))
+        self.legend_labels = []
+        for color in self.COLORS:
+            label = tk.Label(legend, bg=CARD, fg=color, font=("Segoe UI", 9, "bold"), anchor="w")
+            label.pack(side="left", padx=(0, 18))
+            self.legend_labels.append(label)
+        self.canvas = tk.Canvas(self, bg=CARD, height=122, highlightthickness=0, bd=0)
+        self.canvas.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        self.canvas.bind("<Configure>", lambda event: self.draw())
+        self.canvas.bind("<Motion>", self._on_hover)
+        self.canvas.bind("<Leave>", self._on_leave)
+        self.refresh_language()
+
+    def refresh_language(self):
+        self.title_label.configure(text=self._tr("chart_focus", name=self._tr("chart_" + self._filter))
+                                   if self._filter else self._tr("chart_title"))
+        self.reset_button.configure(text=self._tr("chart_all"),
+                                    state="normal" if self._filter else "disabled",
+                                    disabledforeground=MUTED)
+        self.window_label.configure(text=self._tr("chart_window"))
+        self._update_legend()
+        self.draw()
+
+    def set_filter(self, key):
+        if key is not None and key not in self.KEYS:
+            raise ValueError("Unknown chart metric")
+        self._filter = key
+        self._hover_index = None
+        self.finish_motion()
+        self.refresh_language()
+        if self.on_filter_change:
+            self.on_filter_change(key)
+
+    def _update_legend(self):
+        for i, (key, label) in enumerate(zip(self.KEYS, self.legend_labels)):
+            suffix = ""
+            if self._hover_index is not None and self.samples:
+                unit = "min" if self._tr("language_button") == "RU" else "мин"
+                suffix = f"  {self.samples[self._hover_index][1][i]:.1f}/{unit}"
+            label.configure(text=f"{('●', '■', '◆')[i]}  {self._tr('chart_' + key)}{suffix}",
+                            fg=self.COLORS[i] if self._filter in (None, key) else MUTED)
+
+    def observe(self, snap, running):
+        if not running:
+            self._baseline = None
+            return
+        now = time.monotonic()
+        current = tuple(snap[key] for key in self.KEYS)
+        session = snap["started_at"]
+        if self._session != session or self._baseline is None:
+            # A new session has fresh counters; never join it to previous history.
+            if self._session != session:
+                self.samples.clear()
+                self._hover_index = None
+                self._session = session
+                self._update_legend()
+                self.draw()
+            self._baseline = (now, current)
+            return
+        then, previous = self._baseline
+        elapsed = now - then
+        if any(a < b for a, b in zip(current, previous)):
+            self.samples.clear()
+            self._hover_index = None
+            self._baseline = (now, current)
+            self._update_legend()
+            self.draw()
+            return
+        if elapsed >= 10.0:
+            rates = tuple((a - b) * 60.0 / elapsed for a, b in zip(current, previous))
+            self.samples.append((time.time(), rates))
+            self._baseline = (now, current)
+            self._hover_index = None
+            self._update_legend()
+            self._reveal_latest()
+
+    def _reveal_latest(self):
+        if self._reveal_id is not None:
+            self.after_cancel(self._reveal_id)
+            self._reveal_id = None
+        if not self._motion() or len(self.samples) < 2:
+            self._reveal = 1.0
+            self.draw()
+            return
+        started = time.monotonic()
+        def frame():
+            progress = min(1.0, (time.monotonic() - started) / 0.28)
+            self._reveal = 1 - (1 - progress) ** 3
+            self.draw()
+            if progress < 1 and self._motion():
+                self._reveal_id = self.after(16, frame)
+            else:
+                self._reveal = 1.0
+                self._reveal_id = None
+                self.draw()
+        frame()
+
+    def finish_motion(self):
+        if self._reveal_id is not None:
+            self.after_cancel(self._reveal_id)
+            self._reveal_id = None
+        self._reveal = 1.0
+        self.draw()
+
+    def _on_hover(self, event):
+        if not self.samples:
+            return
+        width = max(1, self.canvas.winfo_width())
+        left, right = 38, width - 12
+        if right <= left:
+            return
+        if len(self.samples) == 1:
+            index = 0
+        else:
+            index = round((event.x - left) / (right - left) * (len(self.samples) - 1))
+            index = max(0, min(len(self.samples) - 1, index))
+        if index != self._hover_index:
+            self._hover_index = index
+            self._update_legend()
+            self.draw()
+
+    def _on_leave(self, event):
+        self._hover_index = None
+        self._update_legend()
+        self.draw()
+
+    def draw(self):
+        canvas = self.canvas
+        canvas.delete("all")
+        width, height = canvas.winfo_width(), canvas.winfo_height()
+        if width < 100 or height < 60:
+            return
+        left, right, top, bottom = 38, width - 12, 8, height - 25
+        if not self.samples:
+            canvas.create_text(width / 2, height / 2, text=self._tr("chart_empty"),
+                               fill=MUTED, font=("Segoe UI", 10))
+            return
+        visible_indices = [i for i, key in enumerate(self.KEYS) if self._filter in (None, key)]
+        maximum = max(values[i] for _, values in self.samples for i in visible_indices)
+        # Four whole-number intervals; zero remains visible for count rates.
+        step = max(1, math.ceil(maximum / 4))
+        ceiling = step * 4
+        for i in range(5):
+            y = bottom - (bottom - top) * i / 4
+            canvas.create_line(left, y, right, y, fill=LINE)
+            canvas.create_text(left - 8, y, text=str(i * step), fill=MUTED,
+                               anchor="e", font=("Segoe UI", 8))
+        count = len(self.samples)
+        def xy(index, value):
+            x = left + ((right - left) * index / (count - 1) if count > 1 else (right - left) / 2)
+            y = bottom - (bottom - top) * value / ceiling
+            return x, y
+        if self._hover_index is not None:
+            x, _ = xy(self._hover_index, 0)
+            canvas.create_line(x, top, x, bottom, fill=MUTED, dash=(2, 3))
+        for series in visible_indices:
+            color = self.COLORS[series]
+            coords = [coord for i, (_, values) in enumerate(self.samples) for coord in xy(i, values[series])]
+            if count > 1:
+                if self._reveal < 1.0:
+                    x0, y0, x1, y1 = coords[-4:]
+                    partial = coords[:-2] + [x0 + (x1 - x0) * self._reveal,
+                                               y0 + (y1 - y0) * self._reveal]
+                    canvas.create_line(*partial, fill=color, width=2)
+                else:
+                    canvas.create_line(*coords, fill=color, width=2)
+            for i, (_, values) in enumerate(self.samples):
+                if i == count - 1 and count > 1 and self._reveal < 1.0:
+                    continue
+                x, y = xy(i, values[series])
+                # Unique shape for each series, not color alone.
+                r = 3
+                if series == 0:
+                    canvas.create_oval(x-r, y-r, x+r, y+r, fill=color, outline=CARD)
+                elif series == 1:
+                    canvas.create_rectangle(x-r, y-r, x+r, y+r, fill=color, outline=CARD)
+                else:
+                    canvas.create_polygon(x, y-r-1, x+r+1, y, x, y+r+1, x-r-1, y, fill=color, outline=CARD)
+        first = datetime.fromtimestamp(self.samples[0][0]).strftime("%H:%M:%S")
+        last = datetime.fromtimestamp(self.samples[-1][0]).strftime("%H:%M:%S")
+        if count == 1:
+            canvas.create_text((left + right) / 2, height - 6, text=first, fill=MUTED,
+                               font=("Consolas", 8), anchor="s")
+        else:
+            canvas.create_text(left, height - 6, text=first, fill=MUTED, font=("Consolas", 8), anchor="sw")
+            canvas.create_text(right, height - 6, text=last, fill=MUTED, font=("Consolas", 8), anchor="se")
+        if self._hover_index is not None:
+            ts = datetime.fromtimestamp(self.samples[self._hover_index][0]).strftime("%H:%M:%S")
+            canvas.create_text((left + right) / 2, height - 6, text=ts, fill=TEXT,
+                               font=("Consolas", 8, "bold"), anchor="s")
 
 
 class SaveModPanel(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Save Mod")
-        self.geometry("1100x760")
-        self.minsize(860, 640)
+        self.geometry("1180x900")
+        self.minsize(900, 760)
         self.configure(bg=BG)
         self._language = "ru"
+        self._motion_enabled = True
+        self._status_color = MUTED
+        self._status_kind = "stopped"
+        self._stop_pending = False
+        self._stop_result = None
+        self._error_session = None
+        self._last_error_count = 0
         self._runner = BotRunner()
         self._lock: InstanceLock | None = None
         self._auto_started = False
@@ -187,6 +644,7 @@ class SaveModPanel(tk.Tk):
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(200, self._tick)
+        self.after(80, self._animate_status)
         self.after(400, self._bootstrap)
 
     def _build_style(self) -> None:
@@ -210,7 +668,7 @@ class SaveModPanel(tk.Tk):
     def _button(self, parent, text, command, *, primary=False):
         bg = ACCENT if primary else BG3
         fg = "#09251e" if primary else TEXT
-        return tk.Button(
+        button = tk.Button(
             parent, text=text, command=command, bg=bg, fg=fg,
             activebackground="#8ae6d0" if primary else LINE,
             activeforeground=fg, disabledforeground="#8291a3",
@@ -219,6 +677,39 @@ class SaveModPanel(tk.Tk):
             font=("Segoe UI", 10, "bold"), padx=14, pady=8, cursor="hand2",
             takefocus=True,
         )
+        button._normal_bg = bg
+        button._hovered = False
+        button._hover_id = None
+        def animate_color(target):
+            if button._hover_id is not None:
+                button.after_cancel(button._hover_id)
+                button._hover_id = None
+            current = button.cget("bg")
+            if not self._motion_enabled or not current.startswith("#") or len(current) != 7:
+                button.configure(bg=target)
+                return
+            started = time.monotonic()
+            def frame():
+                progress = min(1.0, (time.monotonic() - started) / 0.16)
+                eased = 1 - (1 - progress) ** 3
+                button.configure(bg=_mix_color(current, target, eased))
+                if progress < 1 and self._motion_enabled:
+                    button._hover_id = button.after(16, frame)
+                else:
+                    button._hover_id = None
+                    button.configure(bg=target)
+            frame()
+        button._animate_color = animate_color
+        def enter(event):
+            button._hovered = True
+            if button.cget("state") != "disabled":
+                animate_color("#8ae6d0" if primary or button._normal_bg == OK else "#34485c")
+        def leave(event):
+            button._hovered = False
+            animate_color(button._normal_bg)
+        button.bind("<Enter>", enter)
+        button.bind("<Leave>", leave)
+        return button
 
     def _build_ui(self) -> None:
         # Header: brand on the left, live status and uptime on the right.
@@ -266,6 +757,7 @@ class SaveModPanel(tk.Tk):
         self.btn_stop.configure(state="disabled")
         self.btn_stop.pack(side="left", padx=(0, 8))
         self.btn_auto_restart = self._button(actions, self._tr("auto_on"), self._toggle_auto_restart)
+        self.btn_auto_restart._normal_bg = OK
         self.btn_auto_restart.configure(bg=OK, fg="#062218", activebackground=ACCENT,
                                         activeforeground="#062218", highlightbackground=OK)
         self.btn_auto_restart.pack(side="left")
@@ -282,6 +774,8 @@ class SaveModPanel(tk.Tk):
         self.btn_data = self._button(shortcuts, self._tr("data_button"), self._open_data)
         for button in (self.btn_media, self.btn_log, self.btn_data):
             button.pack(side="left", padx=(0, 8))
+        self.btn_motion = self._button(shortcuts, self._tr("motion_on"), self._toggle_motion)
+        self.btn_motion.pack(side="right")
 
         overview = tk.Frame(self, bg=BG)
         overview.pack(fill="x", padx=24, pady=(20, 8))
@@ -292,15 +786,23 @@ class SaveModPanel(tk.Tk):
         metrics.pack(fill="x", padx=24)
         for i in range(6):
             metrics.columnconfigure(i, weight=1, uniform="metrics")
-        self.card_msg = MetricCard(metrics, self._tr("messages"), ACCENT2)
-        self.card_media = MetricCard(metrics, self._tr("media"), ACCENT)
-        self.card_del = MetricCard(metrics, self._tr("deleted"), WARN)
-        self.card_edit = MetricCard(metrics, self._tr("edits"), "#d4afff")
-        self.card_err = MetricCard(metrics, self._tr("errors"), DANGER)
-        self.card_db = MetricCard(metrics, self._tr("database"), "#9badc1")
+        self.card_msg = MetricCard(metrics, self._tr("messages"), ACCENT2, motion=lambda: self._motion_enabled)
+        self.card_media = MetricCard(metrics, self._tr("media"), ACCENT, motion=lambda: self._motion_enabled)
+        self.card_del = MetricCard(metrics, self._tr("deleted"), WARN, motion=lambda: self._motion_enabled)
+        self.card_edit = MetricCard(metrics, self._tr("edits"), "#d4afff", motion=lambda: self._motion_enabled)
+        self.card_err = MetricCard(metrics, self._tr("errors"), DANGER, motion=lambda: self._motion_enabled)
+        self.card_db = MetricCard(metrics, self._tr("database"), "#9badc1", motion=lambda: self._motion_enabled)
         for i, card in enumerate((self.card_msg, self.card_media, self.card_del,
                                    self.card_edit, self.card_err, self.card_db)):
             card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 8, 0))
+
+        self.chart = ActivityChart(self, self._tr, lambda: self._motion_enabled)
+        self.chart.pack(fill="x", padx=24, pady=(16, 0))
+        self._detail_cards = {"messages": self.card_msg, "media": self.card_media,
+                              "errors": self.card_err}
+        for key, card in self._detail_cards.items():
+            card.enable_detail(lambda k=key: self._focus_metric(k), self._tr("card_graph"))
+        self.chart.on_filter_change = self._sync_selected_cards
 
         section = tk.Frame(self, bg=BG)
         section.pack(fill="x", padx=24, pady=(20, 8))
@@ -310,12 +812,12 @@ class SaveModPanel(tk.Tk):
         footer = tk.Frame(self, bg=BG2, height=34, highlightthickness=1, highlightbackground=LINE)
         footer.pack(fill="x", side="bottom")
         footer.pack_propagate(False)
-        self.footer_lbl = tk.Label(footer, text=self._tr("footer_default"), bg=BG2, fg=MUTED,
+        self.footer_lbl = NoticeLabel(footer, lambda: self._motion_enabled, text=self._tr("footer_default"), bg=BG2, fg=MUTED,
                                    font=("Segoe UI", 9), anchor="w")
         self.footer_lbl.pack(fill="both", expand=True, padx=24)
         body = tk.Frame(self, bg=BG)
         body.pack(fill="both", expand=True, padx=24, pady=(0, 16))
-        self.nb = ttk.Notebook(body)
+        self.nb = MotionNotebook(body, lambda: self._motion_enabled)
         self.nb.pack(fill="both", expand=True)
         self.events_list = self._make_list_tab(self._tr("tab_events"))
         self.messages_list = self._make_messages_tab(self._tr("tab_messages"))
@@ -325,6 +827,14 @@ class SaveModPanel(tk.Tk):
 
     def _tr(self, key: str, **values: str) -> str:
         return UI_TEXT[self._language][key].format(**values)
+
+    def _focus_metric(self, key: str) -> None:
+        self.chart.set_filter(None if self.chart._filter == key else key)
+
+    def _sync_selected_cards(self, selected: str | None) -> None:
+        for key, card in self._detail_cards.items():
+            active = key == selected
+            card.set_selection(active, self._tr("card_selected" if active else "card_graph"))
 
     def _update_poll_label(self, snap: dict) -> None:
         poll = _fmt_ago(snap["last_poll_at"], self._language)
@@ -341,6 +851,9 @@ class SaveModPanel(tk.Tk):
         self.quick_title.configure(text=self._tr("quick_access"))
         self.overview_title.configure(text=self._tr("overview"))
         self.activity_title.configure(text=self._tr("activity"))
+        self.btn_motion.configure(text=self._tr("motion_on" if self._motion_enabled else "motion_off"))
+        self.chart.refresh_language()
+        self._sync_selected_cards(self.chart._filter)
         self.btn_language.configure(text=self._tr("language_button"))
         self.btn_start.configure(text=self._tr("start"))
         self.btn_stop.configure(text=self._tr("stop"))
@@ -368,6 +881,30 @@ class SaveModPanel(tk.Tk):
             self.nb.tab(widget.master, text=f"  {self._tr(key)}  ")
         self.footer_lbl.configure(text=self._tr("footer_default"))
         self._update_poll_label(STATS.snapshot())
+
+    def _toggle_motion(self) -> None:
+        self._motion_enabled = not self._motion_enabled
+        self.btn_motion.configure(text=self._tr("motion_on" if self._motion_enabled else "motion_off"))
+        if not self._motion_enabled:
+            self.nb.finish()
+            self.chart.finish_motion()
+            self._sync_selected_cards(self.chart._filter)
+            self.footer_lbl.finish()
+            self.status_dot.configure(fg=self._status_color)
+            for card in (self.card_msg, self.card_media, self.card_del,
+                         self.card_edit, self.card_err, self.card_db):
+                card.set(str(card._target))
+
+    def _animate_status(self) -> None:
+        if self._motion_enabled and self._status_kind in {"starting", "stopping"}:
+            # A gentle pulse communicates work in progress; online remains still.
+            amount = 0.72 + 0.28 * (0.5 + 0.5 * math.sin(time.monotonic() * 2.0))
+            rgb = [round(int(BG2[i:i+2], 16) * (1 - amount) + int(WARN[i:i+2], 16) * amount)
+                   for i in (1, 3, 5)]
+            self.status_dot.configure(fg="#%02x%02x%02x" % tuple(rgb))
+        else:
+            self.status_dot.configure(fg=self._status_color)
+        self.after(80, self._animate_status)
 
     def _make_list_tab(self, title: str) -> tk.Listbox:
         frame = tk.Frame(self.nb, bg=BG3)
@@ -489,6 +1026,10 @@ class SaveModPanel(tk.Tk):
             return
         self.btn_start.configure(state="disabled")
         self.btn_stop.configure(state="normal")
+        self._status_kind = "starting"
+        self._status_color = WARN
+        self.status_lbl.configure(text=self._tr("status_starting"), fg=WARN)
+        self.status_dot.configure(fg=WARN)
 
     def _toggle_auto_restart(self) -> None:
         if self._auto_restart_pending:
@@ -498,6 +1039,10 @@ class SaveModPanel(tk.Tk):
         if not self._auto_restart_enabled:
             self._auto_restart_retry_at = None
         enabled = self._auto_restart_enabled
+        self.btn_auto_restart._normal_bg = OK if enabled else BG3
+        if self.btn_auto_restart._hover_id is not None:
+            self.btn_auto_restart.after_cancel(self.btn_auto_restart._hover_id)
+            self.btn_auto_restart._hover_id = None
         self.btn_auto_restart.configure(
             text=self._tr("auto_on" if enabled else "auto_off"),
             bg=OK if enabled else BG3,
@@ -538,16 +1083,32 @@ class SaveModPanel(tk.Tk):
             logger.exception("Auto-restart worker failed")
 
     def _stop_bot(self) -> None:
+        if self._stop_pending or self._auto_restart_pending:
+            return
         self._bot_should_run = False
         self._auto_restart_retry_at = None
         self._auto_restart_attempted = False
+        self._stop_pending = True
+        self._stop_result = None
+        self.btn_start.configure(state="disabled")
         self.btn_stop.configure(state="disabled")
-        self.update_idletasks()
-        self._runner.stop()
-        self.btn_start.configure(state="normal")
-        STATS.set_status("stopped")
+        self._status_kind = "stopping"
+        self._status_color = WARN
+        self.status_lbl.configure(text=self._tr("status_stopping"), fg=WARN)
+        self.status_dot.configure(fg=WARN)
+        self.footer_lbl.configure(text=self._tr("stopping_notice"))
+        def worker():
+            try:
+                self._stop_result = bool(self._runner.stop())
+            except Exception:
+                logger.exception("Bot stop failed")
+                self._stop_result = False
+        threading.Thread(target=worker, name="save-mod-stop", daemon=True).start()
 
     def _on_close(self) -> None:
+        if self._stop_pending:
+            messagebox.showinfo(self._tr("close_title"), self._tr("stop_wait"), parent=self)
+            return
         if self._runner.is_running:
             if not messagebox.askokcancel(self._tr("close_title"), self._tr("close_question")):
                 return
@@ -726,6 +1287,11 @@ class SaveModPanel(tk.Tk):
     def _tick(self) -> None:
         snap = STATS.snapshot()
         running = self._runner.is_running
+        if self._stop_pending and self._stop_result is not None:
+            stopped = self._stop_result
+            self._stop_pending = False
+            self._stop_result = None
+            self.footer_lbl.configure(text=self._tr("stopped_notice" if stopped else "stop_failed"))
         poll_reference = snap["last_poll_at"] or (snap["started_at"] if running else 0.0)
         polling_healthy = (
             running
@@ -773,11 +1339,23 @@ class SaveModPanel(tk.Tk):
                 self._auto_restart_attempted = True
                 self._begin_auto_restart()
 
+        self._status_kind = snap["status"] if running else "stopped"
+        if self._stop_pending:
+            self._status_kind = "stopping"
+            color, label = WARN, self._tr("status_stopping")
+        self._status_color = color
         self.status_dot.configure(fg=color)
         self.status_lbl.configure(text=label, fg=color)
         uptime = _fmt_uptime(time.time() - snap["started_at"]) if running else "—"
         self.uptime_lbl.configure(text=uptime)
         self._update_poll_label(snap)
+        self.chart.observe(snap, running)
+        if snap["started_at"] != self._error_session:
+            self._error_session = snap["started_at"]
+            self._last_error_count = 0
+        if snap["errors"] > self._last_error_count and not self._auto_restart_pending and not self._stop_pending:
+            self.footer_lbl.configure(text=self._tr("new_error"))
+        self._last_error_count = snap["errors"]
 
         self.card_msg.set(f"{snap['messages']:,}")
         self.card_media.set(f"{snap['media']:,}")
@@ -791,8 +1369,8 @@ class SaveModPanel(tk.Tk):
         self._fill_list(self.errors_list, snap["recent_errors"])
         self._refresh_log_view()
 
-        self.btn_start.configure(state="disabled" if running or self._auto_restart_pending else "normal")
-        self.btn_stop.configure(state="normal" if running and not self._auto_restart_pending else "disabled")
+        self.btn_start.configure(state="disabled" if running or self._auto_restart_pending or self._stop_pending else "normal")
+        self.btn_stop.configure(state="normal" if running and not self._auto_restart_pending and not self._stop_pending else "disabled")
 
         self.after(800, self._tick)
 
