@@ -17,34 +17,45 @@ from bot.runner import BotRunner, setup_logging
 
 logger = logging.getLogger(__name__)
 
-BG = "#0f1419"
-BG2 = "#161d27"
-BG3 = "#1c2533"
-CARD = "#1a2330"
-LINE = "#2a3545"
-TEXT = "#e8eef7"
-MUTED = "#8b9bb0"
-ACCENT = "#3dbb9a"
-ACCENT2 = "#4da3ff"
-WARN = "#e6b84d"
-DANGER = "#ef6b6b"
-OK = "#4ad39a"
+# ── palette ──────────────────────────────────────────────
+BG = "#10151d"
+BG2 = "#171f2a"
+BG3 = "#1b2532"
+CARD = "#1b2532"
+LINE = "#354457"
+TEXT = "#f0f4fa"
+MUTED = "#aab8c9"
+ACCENT = "#68d9bd"
+ACCENT2 = "#8abfff"
+WARN = "#edc878"
+DANGER = "#ff9292"
+OK = "#79dfb1"
 
 
 KIND_LABELS = {
     "ru": {
-        "save": "Сохранение:", "media": "Медиа:", "deleted": "Удаление:",
-        "edit": "Правка:", "error": "Ошибка:", "connection": "Связь:", "update": "Апдейт:",
+        "save": "Сохранение:",
+        "media": "Медиа:",
+        "deleted": "Удаление:",
+        "edit": "Правка:",
+        "error": "Ошибка:",
+        "connection": "Связь:",
+        "update": "Апдейт:",
     },
     "en": {
-        "save": "Saved:", "media": "Media:", "deleted": "Deleted:",
-        "edit": "Edit:", "error": "Error:", "connection": "Connection:", "update": "Update:",
+        "save": "Saved:",
+        "media": "Media:",
+        "deleted": "Deleted:",
+        "edit": "Edit:",
+        "error": "Error:",
+        "connection": "Connection:",
+        "update": "Update:",
     },
 }
 
 UI_TEXT = {
     "ru": {
-        "subtitle": "Панель управления", "language_button": "EN", "start": "▶  Запустить",
+        "subtitle": "Панель управления", "overview": "ОБЗОР", "activity": "АКТИВНОСТЬ", "quick_access": "БЫСТРЫЙ ДОСТУП", "uptime": "Время работы", "language_button": "EN", "start": "▶  Запустить",
         "stop": "■  Остановить", "auto_off": "Автоперезапуск: выкл", "auto_on": "Автоперезапуск: вкл",
         "media_button": "📁 Медиа", "log_button": "📄 Лог", "data_button": "🏠 База",
         "poll": "poll", "event": "событие", "messages": "Сообщения", "media": "Медиа",
@@ -63,12 +74,13 @@ UI_TEXT = {
         "already_running_title": "Save Mod", "already_running_footer": "Уже запущено в другом окне — закройте его и нажмите «Запустить»",
         "config_error_title": "Конфигурация", "start_error_title": "Запуск", "startup_error_title": "Save Mod",
         "config_error_footer": "Ошибка .env: {error}", "close_title": "Выход",
-        "close_question": "Остановить бота и закрыть панель?", "startup_error": "Ошибка запуска:\n{error}",
-        "folder_missing_title": "Папка не найдена", "folder_missing": "Для этой переписки пока нет папки с сохранёнными медиа.",
+        "close_question": "Остановить бота и закрыть панель?",
+        "startup_error": "Ошибка запуска:\n{error}", "folder_missing_title": "Папка не найдена",
+        "folder_missing": "Для этой переписки пока нет папки с сохранёнными медиа.",
         "folder_open_error": "Не удалось открыть папку",
     },
     "en": {
-        "subtitle": "Control panel", "language_button": "RU", "start": "▶  Start",
+        "subtitle": "Control panel", "overview": "OVERVIEW", "activity": "ACTIVITY", "quick_access": "QUICK ACCESS", "uptime": "Uptime", "language_button": "RU", "start": "▶  Start",
         "stop": "■  Stop", "auto_off": "Auto-restart: off", "auto_on": "Auto-restart: on",
         "media_button": "📁 Media", "log_button": "📄 Log", "data_button": "🏠 Database",
         "poll": "poll", "event": "event", "messages": "Messages", "media": "Media",
@@ -87,8 +99,9 @@ UI_TEXT = {
         "already_running_title": "Save Mod", "already_running_footer": "Already running in another window. Close it before starting again.",
         "config_error_title": "Configuration", "start_error_title": "Start", "startup_error_title": "Save Mod",
         "config_error_footer": "Configuration error: {error}", "close_title": "Exit",
-        "close_question": "Stop the bot and close the panel?", "startup_error": "Startup error:\n{error}",
-        "folder_missing_title": "Folder not found", "folder_missing": "No saved media folder exists for this conversation yet.",
+        "close_question": "Stop the bot and close the panel?",
+        "startup_error": "Startup error:\n{error}", "folder_missing_title": "Folder not found",
+        "folder_missing": "No saved media folder exists for this conversation yet.",
         "folder_open_error": "Could not open folder",
     },
 }
@@ -122,18 +135,23 @@ def _kind_label(kind: str, language: str = "ru") -> str:
 
 
 class MetricCard(tk.Frame):
+    """A compact metric with a consistent accent and readable hierarchy."""
+
     def __init__(self, master, title: str, accent: str = ACCENT, **kw):
         super().__init__(master, bg=CARD, highlightthickness=1, highlightbackground=LINE, **kw)
+        tk.Frame(self, bg=accent, height=3).pack(fill="x")
+        inner = tk.Frame(self, bg=CARD)
+        inner.pack(fill="both", expand=True, padx=14, pady=(10, 12))
         self.title_lbl = tk.Label(
-            self, text=title.upper(), bg=CARD, fg=MUTED,
-            font=("Segoe UI", 8, "bold"), anchor="w",
+            inner, text=title.upper(), bg=CARD, fg=MUTED,
+            font=("Segoe UI", 9, "bold"), anchor="w",
         )
-        self.title_lbl.pack(fill="x", padx=14, pady=(12, 0))
+        self.title_lbl.pack(fill="x")
         self.value_lbl = tk.Label(
-            self, text="0", bg=CARD, fg=accent,
-            font=("Segoe UI", 22, "bold"), anchor="w",
+            inner, text="0", bg=CARD, fg=TEXT,
+            font=("Segoe UI", 23, "bold"), anchor="w",
         )
-        self.value_lbl.pack(fill="x", padx=14, pady=(2, 12))
+        self.value_lbl.pack(fill="x", pady=(3, 0))
 
     def set(self, value: str) -> None:
         self.value_lbl.configure(text=value)
@@ -143,8 +161,8 @@ class SaveModPanel(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Save Mod")
-        self.geometry("980x680")
-        self.minsize(860, 560)
+        self.geometry("1100x760")
+        self.minsize(860, 640)
         self.configure(bg=BG)
         self._language = "ru"
         self._runner = BotRunner()
@@ -161,7 +179,7 @@ class SaveModPanel(tk.Tk):
         self._visible_messages: list[RecentMessage] = []
 
         try:
-            self.iconbitmap(default="")
+            self.iconbitmap(default="")  # ignore missing icon
         except Exception:
             pass
 
@@ -177,142 +195,132 @@ class SaveModPanel(tk.Tk):
             style.theme_use("clam")
         except tk.TclError:
             pass
-        style.configure("TNotebook", background=BG, borderwidth=0)
+        style.configure("TNotebook", background=BG, borderwidth=0, tabmargins=(0, 0, 0, 0))
         style.configure(
-            "TNotebook.Tab",
-            background=BG3,
-            foreground=MUTED,
-            padding=(16, 8),
-            font=("Segoe UI", 10),
+            "TNotebook.Tab", background=BG2, foreground=MUTED,
+            padding=(18, 10), borderwidth=0, font=("Segoe UI", 10, "bold"),
         )
-        style.map(
-            "TNotebook.Tab",
-            background=[("selected", CARD)],
-            foreground=[("selected", TEXT)],
+        style.map("TNotebook.Tab", background=[("selected", CARD), ("active", BG3)],
+                  foreground=[("selected", TEXT), ("active", TEXT)])
+        style.configure("Dark.Vertical.TScrollbar", background=LINE, troughcolor=BG3,
+                        borderwidth=0, arrowsize=12)
+        style.configure("Dark.Horizontal.TScrollbar", background=LINE, troughcolor=BG3,
+                        borderwidth=0, arrowsize=12)
+
+    def _button(self, parent, text, command, *, primary=False):
+        bg = ACCENT if primary else BG3
+        fg = "#09251e" if primary else TEXT
+        return tk.Button(
+            parent, text=text, command=command, bg=bg, fg=fg,
+            activebackground="#8ae6d0" if primary else LINE,
+            activeforeground=fg, disabledforeground="#8291a3",
+            relief="flat", borderwidth=0, highlightthickness=1,
+            highlightbackground=bg if primary else LINE, highlightcolor=ACCENT2,
+            font=("Segoe UI", 10, "bold"), padx=14, pady=8, cursor="hand2",
+            takefocus=True,
         )
-        style.configure("Dark.Vertical.TScrollbar", background=BG3, troughcolor=BG)
 
     def _build_ui(self) -> None:
-        header = tk.Frame(self, bg=BG2, height=72)
+        # Header: brand on the left, live status and uptime on the right.
+        header = tk.Frame(self, bg=BG2, highlightthickness=1, highlightbackground=LINE)
         header.pack(fill="x")
-        header.pack_propagate(False)
-
-        left = tk.Frame(header, bg=BG2)
-        left.pack(side="left", fill="y", padx=20)
-        tk.Label(
-            left, text="SAVE MOD", bg=BG2, fg=TEXT,
-            font=("Segoe UI", 18, "bold"),
-        ).pack(anchor="w", pady=(14, 0))
-        self.subtitle = tk.Label(
-            left, text=self._tr("subtitle"),
-            bg=BG2, fg=MUTED, font=("Segoe UI", 9),
-        )
+        brand = tk.Frame(header, bg=BG2)
+        brand.pack(side="left", padx=24, pady=16)
+        mark = tk.Label(brand, text="S", bg=ACCENT, fg="#09251e",
+                        font=("Segoe UI", 16, "bold"), width=3, height=1)
+        mark.pack(side="left", padx=(0, 12))
+        brand_text = tk.Frame(brand, bg=BG2)
+        brand_text.pack(side="left")
+        tk.Label(brand_text, text="SAVE MOD", bg=BG2, fg=TEXT,
+                 font=("Segoe UI", 17, "bold"), anchor="w").pack(anchor="w")
+        self.subtitle = tk.Label(brand_text, text=self._tr("subtitle"), bg=BG2, fg=MUTED,
+                                 font=("Segoe UI", 10), anchor="w")
         self.subtitle.pack(anchor="w")
 
         right = tk.Frame(header, bg=BG2)
-        right.pack(side="right", padx=20)
-        self.status_dot = tk.Label(right, text="●", bg=BG2, fg=WARN, font=("Segoe UI", 14))
+        right.pack(side="right", padx=24)
+        self.btn_language = self._button(right, self._tr("language_button"), self._toggle_language)
+        self.btn_language.pack(side="right", padx=(18, 0))
+        uptime_box = tk.Frame(right, bg=BG2)
+        uptime_box.pack(side="right", padx=(20, 0))
+        self.uptime_title = tk.Label(uptime_box, text=self._tr("uptime"), bg=BG2, fg=MUTED,
+                                     font=("Segoe UI", 9), anchor="w")
+        self.uptime_title.pack(anchor="w")
+        self.uptime_lbl = tk.Label(uptime_box, text="—", bg=BG2, fg=TEXT,
+                                   font=("Consolas", 11, "bold"), anchor="w")
+        self.uptime_lbl.pack(anchor="w")
+        status_box = tk.Frame(right, bg=BG2)
+        status_box.pack(side="right")
+        self.status_dot = tk.Label(status_box, text="●", bg=BG2, fg=MUTED, font=("Segoe UI", 13))
         self.status_dot.pack(side="left", padx=(0, 6))
-        self.status_lbl = tk.Label(
-            right, text=self._tr("status_stopped"), bg=BG2, fg=WARN,
-            font=("Segoe UI", 11, "bold"),
-        )
-        self.status_lbl.pack(side="left", padx=(0, 18))
-        self.uptime_lbl = tk.Label(right, text="00:00", bg=BG2, fg=MUTED, font=("Consolas", 11))
-        self.uptime_lbl.pack(side="left")
+        self.status_lbl = tk.Label(status_box, text=self._tr("status_stopped"), bg=BG2, fg=MUTED,
+                                   font=("Segoe UI", 10, "bold"))
+        self.status_lbl.pack(side="left")
 
-        bar = tk.Frame(self, bg=BG, pady=12)
-        bar.pack(fill="x", padx=20)
-
-        self.btn_start = tk.Button(
-            bar, text=self._tr("start"), command=self._start_bot,
-            bg=ACCENT, fg="#062218", activebackground="#34a888", activeforeground="#062218",
-            relief="flat", font=("Segoe UI", 10, "bold"), padx=16, pady=8, cursor="hand2",
-        )
+        # The primary actions are separate from shortcuts so they remain easy to scan.
+        actions = tk.Frame(self, bg=BG)
+        actions.pack(fill="x", padx=24, pady=(18, 0))
+        self.btn_start = self._button(actions, self._tr("start"), self._start_bot, primary=True)
         self.btn_start.pack(side="left", padx=(0, 8))
-
-        self.btn_stop = tk.Button(
-            bar, text=self._tr("stop"), command=self._stop_bot,
-            bg=BG3, fg=TEXT, activebackground=LINE, activeforeground=TEXT,
-            relief="flat", font=("Segoe UI", 10, "bold"), padx=16, pady=8, cursor="hand2",
-            state="disabled",
-        )
+        self.btn_stop = self._button(actions, self._tr("stop"), self._stop_bot)
+        self.btn_stop.configure(state="disabled")
         self.btn_stop.pack(side="left", padx=(0, 8))
+        self.btn_auto_restart = self._button(actions, self._tr("auto_on"), self._toggle_auto_restart)
+        self.btn_auto_restart.configure(bg=OK, fg="#062218", activebackground=ACCENT,
+                                        activeforeground="#062218", highlightbackground=OK)
+        self.btn_auto_restart.pack(side="left")
+        self.poll_lbl = tk.Label(actions, text="", bg=BG, fg=MUTED, font=("Segoe UI", 10), anchor="e")
+        self.poll_lbl.pack(side="right", padx=(8, 0))
 
-        self.btn_auto_restart = tk.Button(
-            bar, text=self._tr("auto_on"), command=self._toggle_auto_restart,
-            bg=OK, fg="#062218", activebackground=ACCENT, activeforeground="#062218",
-            relief="flat", font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
-        )
-        self.btn_auto_restart.pack(side="left", padx=(0, 8))
+        shortcuts = tk.Frame(self, bg=BG)
+        shortcuts.pack(fill="x", padx=24, pady=(12, 0))
+        self.quick_title = tk.Label(shortcuts, text=self._tr("quick_access"), bg=BG, fg=MUTED,
+                                    font=("Segoe UI", 9, "bold"))
+        self.quick_title.pack(side="left", padx=(0, 14))
+        self.btn_media = self._button(shortcuts, self._tr("media_button"), self._open_media)
+        self.btn_log = self._button(shortcuts, self._tr("log_button"), self._open_log)
+        self.btn_data = self._button(shortcuts, self._tr("data_button"), self._open_data)
+        for button in (self.btn_media, self.btn_log, self.btn_data):
+            button.pack(side="left", padx=(0, 8))
 
-        self.btn_media = tk.Button(
-            bar, text=self._tr("media_button"), command=self._open_media,
-            bg=BG3, fg=TEXT, activebackground=LINE, relief="flat",
-            font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
-        )
-        self.btn_media.pack(side="left", padx=(0, 8))
-
-        self.btn_log = tk.Button(
-            bar, text=self._tr("log_button"), command=self._open_log,
-            bg=BG3, fg=TEXT, activebackground=LINE, relief="flat",
-            font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
-        )
-        self.btn_log.pack(side="left", padx=(0, 8))
-
-        self.btn_data = tk.Button(
-            bar, text=self._tr("data_button"), command=self._open_data,
-            bg=BG3, fg=TEXT, activebackground=LINE, relief="flat",
-            font=("Segoe UI", 10), padx=12, pady=8, cursor="hand2",
-        )
-        self.btn_data.pack(side="left")
-
-        self.poll_lbl = tk.Label(bar, text="", bg=BG, fg=MUTED, font=("Segoe UI", 9))
-        self.poll_lbl.pack(side="right")
-        self.btn_language = tk.Button(
-            bar, text=self._tr("language_button"), command=self._toggle_language,
-            bg=BG3, fg=TEXT, activebackground=LINE, activeforeground=TEXT,
-            relief="flat", font=("Segoe UI", 9, "bold"), padx=10, pady=8, cursor="hand2",
-        )
-        self.btn_language.pack(side="right", padx=(0, 8))
-
+        overview = tk.Frame(self, bg=BG)
+        overview.pack(fill="x", padx=24, pady=(20, 8))
+        self.overview_title = tk.Label(overview, text=self._tr("overview"), bg=BG, fg=MUTED,
+                                       font=("Segoe UI", 9, "bold"), anchor="w")
+        self.overview_title.pack(side="left")
         metrics = tk.Frame(self, bg=BG)
-        metrics.pack(fill="x", padx=20, pady=(4, 12))
+        metrics.pack(fill="x", padx=24)
         for i in range(6):
-            metrics.columnconfigure(i, weight=1, uniform="m")
-
+            metrics.columnconfigure(i, weight=1, uniform="metrics")
         self.card_msg = MetricCard(metrics, self._tr("messages"), ACCENT2)
         self.card_media = MetricCard(metrics, self._tr("media"), ACCENT)
         self.card_del = MetricCard(metrics, self._tr("deleted"), WARN)
-        self.card_edit = MetricCard(metrics, self._tr("edits"), "#c084fc")
+        self.card_edit = MetricCard(metrics, self._tr("edits"), "#d4afff")
         self.card_err = MetricCard(metrics, self._tr("errors"), DANGER)
-        self.card_db = MetricCard(metrics, self._tr("database"), TEXT)
+        self.card_db = MetricCard(metrics, self._tr("database"), "#9badc1")
+        for i, card in enumerate((self.card_msg, self.card_media, self.card_del,
+                                   self.card_edit, self.card_err, self.card_db)):
+            card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 8, 0))
 
-        for i, card in enumerate(
-            (self.card_msg, self.card_media, self.card_del, self.card_edit, self.card_err, self.card_db)
-        ):
-            card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 6, 0))
-
+        section = tk.Frame(self, bg=BG)
+        section.pack(fill="x", padx=24, pady=(20, 8))
+        self.activity_title = tk.Label(section, text=self._tr("activity"), bg=BG, fg=MUTED,
+                                      font=("Segoe UI", 9, "bold"), anchor="w")
+        self.activity_title.pack(side="left")
+        footer = tk.Frame(self, bg=BG2, height=34, highlightthickness=1, highlightbackground=LINE)
+        footer.pack(fill="x", side="bottom")
+        footer.pack_propagate(False)
+        self.footer_lbl = tk.Label(footer, text=self._tr("footer_default"), bg=BG2, fg=MUTED,
+                                   font=("Segoe UI", 9), anchor="w")
+        self.footer_lbl.pack(fill="both", expand=True, padx=24)
         body = tk.Frame(self, bg=BG)
-        body.pack(fill="both", expand=True, padx=20, pady=(0, 16))
-
+        body.pack(fill="both", expand=True, padx=24, pady=(0, 16))
         self.nb = ttk.Notebook(body)
         self.nb.pack(fill="both", expand=True)
-
         self.events_list = self._make_list_tab(self._tr("tab_events"))
         self.messages_list = self._make_messages_tab(self._tr("tab_messages"))
         self.errors_list = self._make_list_tab(self._tr("tab_errors"))
         self.log_text = self._make_log_tab(self._tr("tab_logs"))
-
-        footer = tk.Frame(self, bg=BG2, height=28)
-        footer.pack(fill="x", side="bottom")
-        footer.pack_propagate(False)
-        self.footer_lbl = tk.Label(
-            footer,
-            text=self._tr("footer_default"),
-            bg=BG2, fg=MUTED, font=("Segoe UI", 8), anchor="w",
-        )
-        self.footer_lbl.pack(fill="x", padx=16)
         self._update_poll_label(STATS.snapshot())
 
     def _tr(self, key: str, **values: str) -> str:
@@ -329,6 +337,10 @@ class SaveModPanel(tk.Tk):
 
     def _refresh_language(self) -> None:
         self.subtitle.configure(text=self._tr("subtitle"))
+        self.uptime_title.configure(text=self._tr("uptime"))
+        self.quick_title.configure(text=self._tr("quick_access"))
+        self.overview_title.configure(text=self._tr("overview"))
+        self.activity_title.configure(text=self._tr("activity"))
         self.btn_language.configure(text=self._tr("language_button"))
         self.btn_start.configure(text=self._tr("start"))
         self.btn_stop.configure(text=self._tr("stop"))
@@ -371,7 +383,7 @@ class SaveModPanel(tk.Tk):
             highlightthickness=0,
             font=("Consolas", 10),
         )
-        scroll = ttk.Scrollbar(frame, orient="vertical", command=lb.yview)
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=lb.yview, style="Dark.Vertical.TScrollbar")
         lb.configure(yscrollcommand=scroll.set)
         lb.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
         scroll.pack(side="right", fill="y", pady=8, padx=(0, 8))
@@ -391,8 +403,10 @@ class SaveModPanel(tk.Tk):
             wrap="none",
             state="disabled",
         )
-        scroll = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
-        text.configure(yscrollcommand=scroll.set)
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=text.yview, style="Dark.Vertical.TScrollbar")
+        xscroll = ttk.Scrollbar(frame, orient="horizontal", command=text.xview, style="Dark.Horizontal.TScrollbar")
+        xscroll.pack(side="bottom", fill="x", padx=8, pady=(0, 8))
+        text.configure(yscrollcommand=scroll.set, xscrollcommand=xscroll.set)
         text.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
         scroll.pack(side="right", fill="y", pady=8, padx=(0, 8))
         text.tag_configure("user_id", foreground=ACCENT2, underline=True)
@@ -415,8 +429,10 @@ class SaveModPanel(tk.Tk):
             wrap="none",
             state="disabled",
         )
-        scroll = ttk.Scrollbar(frame, orient="vertical", command=txt.yview)
-        txt.configure(yscrollcommand=scroll.set)
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=txt.yview, style="Dark.Vertical.TScrollbar")
+        xscroll = ttk.Scrollbar(frame, orient="horizontal", command=txt.xview, style="Dark.Horizontal.TScrollbar")
+        xscroll.pack(side="bottom", fill="x", padx=8, pady=(0, 8))
+        txt.configure(yscrollcommand=scroll.set, xscrollcommand=xscroll.set)
         txt.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
         scroll.pack(side="right", fill="y", pady=8, padx=(0, 8))
         txt.tag_configure("err", foreground=DANGER)
@@ -465,6 +481,7 @@ class SaveModPanel(tk.Tk):
         self._bot_should_run = True
         try:
             self._auto_restart_attempted = False
+            self._auto_restart_retry_at = None
             self._runner.start()
         except Exception as exc:
             _write_crash(exc)
@@ -478,6 +495,8 @@ class SaveModPanel(tk.Tk):
             return
         self._auto_restart_enabled = not self._auto_restart_enabled
         self._auto_restart_attempted = False
+        if not self._auto_restart_enabled:
+            self._auto_restart_retry_at = None
         enabled = self._auto_restart_enabled
         self.btn_auto_restart.configure(
             text=self._tr("auto_on" if enabled else "auto_off"),
@@ -485,6 +504,7 @@ class SaveModPanel(tk.Tk):
             fg="#062218" if enabled else TEXT,
             activebackground=ACCENT if enabled else LINE,
             activeforeground="#062218" if enabled else TEXT,
+            highlightbackground=OK if enabled else LINE,
         )
         self.footer_lbl.configure(text=self._tr("auto_enabled" if enabled else "auto_disabled"))
 
@@ -539,18 +559,18 @@ class SaveModPanel(tk.Tk):
     def _open_media(self) -> None:
         path = BASE_DIR / "media"
         path.mkdir(parents=True, exist_ok=True)
-        os.startfile(path)
+        os.startfile(path)  # type: ignore[attr-defined]
 
     def _open_data(self) -> None:
         path = BASE_DIR / "data"
         path.mkdir(parents=True, exist_ok=True)
-        os.startfile(path)
+        os.startfile(path)  # type: ignore[attr-defined]
 
     def _open_log(self) -> None:
         path = BASE_DIR / "bot.log"
         if not path.exists():
             path.write_text("", encoding="utf-8")
-        os.startfile(path)
+        os.startfile(path)  # type: ignore[attr-defined]
 
     def _status_visual(self, status: str, last_poll_at: float) -> tuple[str, str, str]:
         stale = bool(last_poll_at) and (time.time() - last_poll_at) > 45
@@ -676,6 +696,7 @@ class SaveModPanel(tk.Tk):
         for line in raw.splitlines()[-120:]:
             low = line.lower()
             if any(k in low for k in ("error", "critical", "warning", "saved", "delete", "connection", "online", "conflict", "stopped")):
+                # strip token from telegram urls if present
                 if "api.telegram.org/bot" in line:
                     parts = line.split("api.telegram.org/bot", 1)
                     rest = parts[1]
