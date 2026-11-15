@@ -151,6 +151,7 @@ class SaveModPanel(tk.Tk):
         self._lock: InstanceLock | None = None
         self._auto_started = False
         self._auto_restart_enabled = True
+        self._bot_should_run = False
         self._auto_restart_pending = False
         self._auto_restart_attempted = False
         self._auto_restart_result: str | None = None
@@ -461,6 +462,7 @@ class SaveModPanel(tk.Tk):
                 return
             self._lock = lock
         kill_foreign_bots(keep_pid=os.getpid(), include_panel=False)
+        self._bot_should_run = True
         try:
             self._auto_restart_attempted = False
             self._runner.start()
@@ -516,6 +518,9 @@ class SaveModPanel(tk.Tk):
             logger.exception("Auto-restart worker failed")
 
     def _stop_bot(self) -> None:
+        self._bot_should_run = False
+        self._auto_restart_retry_at = None
+        self._auto_restart_attempted = False
         self.btn_stop.configure(state="disabled")
         self.update_idletasks()
         self._runner.stop()
@@ -735,13 +740,14 @@ class SaveModPanel(tk.Tk):
             self._auto_restart_retry_at = None
             if recovered:
                 self.footer_lbl.configure(text=self._tr("auto_restarted"))
-        elif self._auto_restart_enabled and not self._auto_restart_pending:
+        elif self._auto_restart_enabled and self._bot_should_run and not self._auto_restart_pending:
             retry_due = (
                 self._auto_restart_retry_at is not None
                 and time.monotonic() >= self._auto_restart_retry_at
             )
             first_attempt = stale and not self._auto_restart_attempted and self._auto_restart_retry_at is None
-            if retry_due or first_attempt:
+            runner_stopped = not running and self._auto_restart_retry_at is None
+            if retry_due or first_attempt or runner_stopped:
                 self._auto_restart_retry_at = None
                 self._auto_restart_attempted = True
                 self._begin_auto_restart()
