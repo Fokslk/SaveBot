@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import threading
 from pathlib import Path
 
@@ -30,22 +31,24 @@ from bot.storage import MessageStorage
 logger = logging.getLogger(__name__)
 
 
+_TOKEN_URL_RE = re.compile(r"(?i)(api\.telegram\.org/(?:file/)?bot)[^/\s\"']+")
+_TOKEN_RE = re.compile(r"\d{6,12}:[A-Za-z0-9_-]{30,}")
+
+
+def _redact(text: str) -> str:
+    text = _TOKEN_URL_RE.sub(r"\1***", text)
+    return _TOKEN_RE.sub("***", text)
+
+
+class _RedactingFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return _redact(super().format(record))
+
+
 class _FlushedFileHandler(logging.FileHandler):
     def emit(self, record):
         super().emit(record)
         self.flush()
-
-
-class _PollHeartbeatFilter(logging.Filter):
-    def filter(self, record: logging.LogRecord) -> bool:
-        try:
-            msg = record.getMessage()
-        except Exception:
-            return True
-        if "getUpdates" in msg:
-            STATS.touch_poll()
-            return False
-        return True
 
 
 def setup_logging(*, console: bool = False) -> None:
@@ -56,19 +59,22 @@ def setup_logging(*, console: bool = False) -> None:
     root.handlers.clear()
     root.setLevel(logging.INFO)
 
+    formatter = _RedactingFormatter(log_format)
+
     file_handler = _FlushedFileHandler(str(log_file), mode="a", encoding="utf-8")
     file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(logging.Formatter(log_format))
+    file_handler.setFormatter(formatter)
     root.addHandler(file_handler)
 
     if console:
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(logging.Formatter(log_format))
+        console_handler.setFormatter(formatter)
         root.addHandler(console_handler)
 
-    logging.getLogger("httpx").setLevel(logging.INFO)
-    logging.getLogger("httpx").addFilter(_PollHeartbeatFilter())
+    # Request URLs contain the bot token, so httpx must not log them at INFO.
+    # Polling liveness is tracked by BotRunner._health_loop instead.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("telegram.ext.ExtBot").setLevel(logging.INFO)
 
@@ -255,15 +261,20 @@ class BotRunner:
             drop_pending_updates=False,
         )
         STATS.set_status("online")
+        STATS.touch_poll()
         logger.info("Save Mod online — db messages=%s deleted=%s", total, deleted)
 
         refresh_task = asyncio.create_task(self._refresh_db_loop(storage, stop_event))
+        health_task = asyncio.create_task(self._health_loop(application, stop_event))
         try:
             await stop_event.wait()
         finally:
             refresh_task.cancel()
+            health_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await refresh_task
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await health_task
             logger.info("Stopping bot…")
             with contextlib.suppress(Exception):
                 await application.updater.stop()
@@ -273,6 +284,27 @@ class BotRunner:
                 await application.shutdown()
             STATS.set_status("stopped")
             logger.info("Bot stopped cleanly")
+
+    async def _health_loop(
+        self,
+        application: Application,
+        stop_event: asyncio.Event,
+    ) -> None:
+        """Keep the dashboard heartbeat alive without logging API URLs."""
+        updater = application.updater
+        while not stop_event.is_set():
+            if updater is not None and updater.running:
+                try:
+                    await asyncio.wait_for(application.bot.get_me(), timeout=10)
+                    STATS.touch_poll()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    pass
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=15)
+            except asyncio.TimeoutError:
+                continue
 
     async def _refresh_db_loop(self, storage: MessageStorage, stop_event: asyncio.Event) -> None:
         while not stop_event.is_set():

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from html import escape
 
 from bot.storage import StoredMessage
@@ -17,12 +17,15 @@ _MEDIA_LABELS = {
 }
 
 
-def _fmt_dt(iso: str | None) -> str:
+def format_datetime(iso: str | None) -> str:
+    """Format a stored UTC timestamp in the machine's local timezone."""
     if not iso:
         return "—"
     try:
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        return dt.strftime("%d.%m.%Y %H:%M:%S")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone().strftime("%d.%m.%Y %H:%M:%S")
     except ValueError:
         return escape(iso)
 
@@ -57,7 +60,7 @@ def format_deleted_notification(msg: StoredMessage, chat_title: str | None) -> s
     parts.append(
         _meta_block(
             chat_link=_fmt_chat_link(chat_title, msg.chat_id),
-            date=_fmt_dt(msg.date),
+            date=format_datetime(msg.date),
         )
     )
 

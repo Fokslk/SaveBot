@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.config import ADMIN_USER_ID
+from bot.formatters import format_datetime
 from bot.handlers.notifications import mark_chat_unblocked
 
 
@@ -53,7 +54,9 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         for row in rows:
             connected_id = int(row["user_id"])
             connected_link = f'<a href="tg://user?id={connected_id}">{connected_id}</a>'
-            lines.append(f"• {connected_link} · подключено: {row['updated_at']}")
+            lines.append(
+                f"• {connected_link} · подключено: {format_datetime(row['updated_at'])}"
+            )
         text = "\n".join(lines)
 
     message = update.effective_message

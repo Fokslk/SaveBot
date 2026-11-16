@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ctypes
-import logging
 import os
 import sys
 import threading
@@ -49,17 +48,6 @@ _KIND_RU = {
     "deleted_business_messages": "удаление",
     "business_connection": "связь",
 }
-
-
-class _PollHeartbeatFilter(logging.Filter):
-    def filter(self, record: logging.LogRecord) -> bool:
-        try:
-            msg = record.getMessage()
-        except Exception:
-            return True
-        if "getUpdates" in msg:
-            STATS.touch_poll()
-        return True
 
 
 def prepare_console() -> None:
@@ -268,7 +256,6 @@ def start_dashboard(
     interval: float = 1.0,
     db_refresh=None,
 ) -> tuple[threading.Event, threading.Thread]:
-    logging.getLogger("httpx").addFilter(_PollHeartbeatFilter())
     stop_event = threading.Event()
     thread = threading.Thread(
         target=_dashboard_loop,

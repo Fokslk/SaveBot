@@ -504,7 +504,8 @@ class SaveModPanel(QMainWindow):
             with path.open('rb') as f:f.seek(0,2);size=f.tell();f.seek(max(0,size-40000));raw=f.read().decode('utf-8',errors='replace')
         except OSError:return
         terms=('error','critical','warning','saved','delete','connection','online','conflict','stopped')
-        lines=[re.sub(r'(api\.telegram\.org/bot)[^/\s]+',r'\1***',line,flags=re.IGNORECASE) for line in raw.splitlines()[-120:] if any(k in line.lower() for k in terms)]
+        lines=[re.sub(r'(api\.telegram\.org/(?:file/)?bot)[^/\s]+',r'\1***',line,flags=re.IGNORECASE) for line in raw.splitlines()[-120:] if any(k in line.lower() for k in terms)]
+        lines=[re.sub(r'\d{6,12}:[A-Za-z0-9_-]{30,}','***',line) for line in lines]
         text='\n'.join(lines[-80:]) or self.tr_('empty_logs')
         if self.logs_text.toPlainText()!=text:self.logs_text.setPlainText(text)
     def _tick(self):
